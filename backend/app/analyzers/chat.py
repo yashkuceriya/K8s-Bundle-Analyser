@@ -100,7 +100,9 @@ class BundleChat:
             "What would you like to know about the cluster?'\n"
             "6. Be specific — cite pod names, log lines, and event messages from the data.\n"
             "7. If you don't have enough data to answer, say so clearly.\n"
-            "8. Keep responses professional, concise, and actionable."
+            "8. Keep responses professional, concise, and actionable.\n"
+            "9. Write in plain natural language. Do NOT use markdown formatting like **, ##, ###, or bullet lists with -. "
+            "Write flowing paragraphs. Use code blocks (triple backticks) ONLY for kubectl commands."
         )
 
         messages: list[dict] = [

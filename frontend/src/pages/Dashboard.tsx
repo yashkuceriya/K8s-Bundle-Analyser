@@ -165,7 +165,7 @@ export default function Dashboard() {
             ref={fileInputRef}
             type="file"
             onChange={onFileChange}
-            accept=".tar.gz,.tgz"
+            accept=".tar.gz,.tgz,.gz,application/gzip,application/x-gzip,application/x-compressed-tar"
             aria-label="Upload support bundle file"
             className="hidden"
           />

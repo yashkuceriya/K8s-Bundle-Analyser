@@ -265,9 +265,10 @@ async def analyze_bundle(bundle_id: str):
         heuristic = HeuristicAnalyzer(parsed_data)
         heuristic_issues = heuristic.analyze()
 
-        # Step 3: Run AI analysis
+        # Step 3: Run AI analysis (in thread to avoid blocking event loop)
+        import asyncio
         ai_analyzer = AIAnalyzer()
-        ai_result = ai_analyzer.analyze(parsed_data, heuristic_issues)
+        ai_result = await asyncio.to_thread(ai_analyzer.analyze, parsed_data, heuristic_issues)
 
         # Step 4: Merge AI additional issues into the issues list
         all_issues = list(heuristic_issues)
@@ -533,7 +534,8 @@ async def chat_with_bundle(bundle_id: str, body: ChatRequest):
     history = [{"role": m.role, "content": m.content} for m in body.history]
 
     try:
-        answer = chat.ask(body.question, history)
+        import asyncio
+        answer = await asyncio.to_thread(chat.ask, body.question, history)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Chat failed: {exc}")
 

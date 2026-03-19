@@ -724,6 +724,9 @@ const POD_STATUS_COLORS: Record<string, string> = {
   Failed: '#ef4444', CrashLoopBackOff: '#ef4444', Unknown: '#6b7280',
   ImagePullBackOff: '#f97316', OOMKilled: '#dc2626', Error: '#ef4444',
   Evicted: '#9333ea', ContainerCreating: '#3b82f6',
+  Healthy: '#10b981', Critical: '#ef4444', Warning: '#f59e0b',
+  Ready: '#10b981', healthy: '#10b981', critical: '#ef4444', warning: '#f59e0b',
+  running: '#10b981', error: '#ef4444', pending: '#f59e0b', unknown: '#6b7280',
 };
 
 function AnalysisCharts({ analysis }: { analysis: AnalysisResult }) {

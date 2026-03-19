@@ -13,6 +13,8 @@ venv/
 .venv*/
 .DS_Store
 WORKLOG.md
+INTERVIEW_PREP.md
+VIDEO_SCRIPT.md
 *.tsbuildinfo
 .pytest_cache/
 .coverage

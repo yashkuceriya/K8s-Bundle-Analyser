@@ -1,0 +1,309 @@
+from __future__ import annotations
+
+import json
+import logging
+import re
+from pathlib import Path
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+MAX_LOG_LINES_PER_FILE = 5000
+MAX_HOST_FILE_BYTES = 10_000
+
+
+class BundleParser:
+    """Parses an extracted Troubleshoot support bundle directory."""
+
+    def __init__(self, bundle_path: str):
+        self.bundle_path = Path(bundle_path)
+        # Handle nested top-level directory: the extracted tar.gz often has
+        # a single top-level directory like support-bundle-2024-01-01T00:00:00/
+        self._root = self._find_root()
+
+    def _find_root(self) -> Path:
+        """Find the actual root of the bundle, handling nested directories."""
+        if not self.bundle_path.exists():
+            return self.bundle_path
+
+        # Check if the extracted path itself has the expected structure
+        expected_dirs = {"cluster-info", "cluster-resources", "pod-logs", "host-collectors", "analysis.json", "version.yaml"}
+        children = {p.name for p in self.bundle_path.iterdir()} if self.bundle_path.is_dir() else set()
+
+        if children & expected_dirs:
+            return self.bundle_path
+
+        # Check one level deeper for a single subdirectory that contains bundle content
+        subdirs = [p for p in self.bundle_path.iterdir() if p.is_dir()]
+        if len(subdirs) >= 1:
+            for subdir in subdirs:
+                sub_children = {p.name for p in subdir.iterdir()} if subdir.is_dir() else set()
+                if sub_children & expected_dirs:
+                    return subdir
+
+        # Fall back to the original path
+        return self.bundle_path
+
+    def parse(self) -> dict[str, Any]:
+        """Parse the full support bundle and return structured data."""
+        logger.info("Parsing bundle at %s", self._root)
+        data: dict[str, Any] = {
+            "pods": [],
+            "deployments": [],
+            "services": [],
+            "nodes": [],
+            "events": [],
+            "namespaces": [],
+            "logs": [],
+            "cluster_version": None,
+            "host_info": {},
+            "analysis_json": None,
+            "pvs": [],
+            "storage_classes": [],
+        }
+
+        data["cluster_version"] = self._parse_cluster_version()
+        data["nodes"] = self._parse_nodes()
+        data["namespaces"] = self._parse_namespaces()
+        data["pods"] = self._parse_resource_by_namespace("pods")
+        data["deployments"] = self._parse_resource_by_namespace("deployments")
+        data["services"] = self._parse_resource_by_namespace("services")
+        data["events"] = self._parse_events()
+        data["logs"] = self._parse_pod_logs()
+        data["host_info"] = self._parse_host_info()
+        data["analysis_json"] = self._parse_analysis_json()
+        pvs_raw = self._parse_json_file(self._root / "cluster-resources" / "pvs.json")
+        data["pvs"] = self._extract_items(pvs_raw) if pvs_raw else []
+        sc_raw = self._parse_json_file(self._root / "cluster-resources" / "storage-classes.json")
+        data["storage_classes"] = self._extract_items(sc_raw) if sc_raw else []
+
+        # Summary counts
+        logger.info(
+            "Parsed: %d pods, %d deployments, %d services, %d nodes, %d events, %d log entries",
+            len(data["pods"]), len(data["deployments"]),
+            len(data["services"]), len(data["nodes"]),
+            len(data["events"]), len(data["logs"]),
+        )
+
+        return data
+
+    def _parse_json_file(self, path: Path) -> Any:
+        """Safely parse a single JSON file."""
+        try:
+            if path.exists() and path.is_file():
+                with open(path, "r", encoding="utf-8", errors="replace") as f:
+                    return json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("Could not parse %s: %s", path, e)
+        return None
+
+    def _parse_cluster_version(self) -> dict | None:
+        """Parse cluster-info/cluster_version.json."""
+        path = self._root / "cluster-info" / "cluster_version.json"
+        return self._parse_json_file(path)
+
+    def _parse_nodes(self) -> list[dict]:
+        """Parse cluster-resources/nodes.json."""
+        path = self._root / "cluster-resources" / "nodes.json"
+        data = self._parse_json_file(path)
+        if data is None:
+            return []
+        # Could be a list or a k8s List object
+        return self._extract_items(data)
+
+    def _parse_namespaces(self) -> list[dict]:
+        """Parse cluster-resources/namespaces.json."""
+        path = self._root / "cluster-resources" / "namespaces.json"
+        data = self._parse_json_file(path)
+        if data is None:
+            return []
+        return self._extract_items(data)
+
+    def _parse_resource_by_namespace(self, resource_type: str) -> list[dict]:
+        """Parse cluster-resources/<resource_type>/<namespace>.json files."""
+        resource_dir = self._root / "cluster-resources" / resource_type
+        all_items: list[dict] = []
+
+        if not resource_dir.exists() or not resource_dir.is_dir():
+            return all_items
+
+        for json_file in resource_dir.iterdir():
+            if not json_file.name.endswith(".json"):
+                continue
+            try:
+                data = self._parse_json_file(json_file)
+                if data is not None:
+                    items = self._extract_items(data)
+                    all_items.extend(items)
+            except Exception as e:
+                logger.warning("Error parsing %s: %s", json_file, e)
+
+        return all_items
+
+    def _parse_events(self) -> list[dict]:
+        """Parse cluster-resources/events/<namespace>.json files."""
+        events_dir = self._root / "cluster-resources" / "events"
+        all_events: list[dict] = []
+
+        if not events_dir.exists() or not events_dir.is_dir():
+            return all_events
+
+        for json_file in events_dir.iterdir():
+            if not json_file.name.endswith(".json"):
+                continue
+            try:
+                data = self._parse_json_file(json_file)
+                if data is not None:
+                    items = self._extract_items(data)
+                    all_events.extend(items)
+            except Exception as e:
+                logger.warning("Error parsing %s: %s", json_file, e)
+
+        # Sort by lastTimestamp or metadata.creationTimestamp
+        def event_sort_key(ev: dict) -> str:
+            return (
+                ev.get("lastTimestamp")
+                or ev.get("eventTime")
+                or ev.get("metadata", {}).get("creationTimestamp", "")
+            )
+
+        all_events.sort(key=event_sort_key)
+        return all_events
+
+    def _parse_pod_logs(self) -> list[dict]:
+        """Parse pod logs from multiple possible locations."""
+        log_entries: list[dict] = []
+
+        # Strategy 1: pod-logs/<namespace>/<pod>/<container>.log (synthetic bundles)
+        logs_dir = self._root / "pod-logs"
+        if logs_dir.exists() and logs_dir.is_dir():
+            for ns_dir in logs_dir.iterdir():
+                if not ns_dir.is_dir():
+                    continue
+                namespace = ns_dir.name
+                for pod_dir in ns_dir.iterdir():
+                    if not pod_dir.is_dir():
+                        continue
+                    pod_name = pod_dir.name
+                    for log_file in pod_dir.iterdir():
+                        if not log_file.is_file():
+                            continue
+                        container = log_file.stem
+                        try:
+                            log_entries.extend(
+                                self._parse_log_file(log_file, namespace, pod_name, container)
+                            )
+                        except Exception as e:
+                            logger.warning("Error parsing log %s: %s", log_file, e)
+
+        # Strategy 2: <pod-name>/<container>.log at bundle root (real Troubleshoot bundles)
+        skip_dirs = {
+            "cluster-info", "cluster-resources", "host-collectors",
+            "execution-data", "pod-logs", "host-os-info",
+        }
+        if self._root.is_dir():
+            for entry in self._root.iterdir():
+                if not entry.is_dir() or entry.name in skip_dirs or entry.name.startswith("."):
+                    continue
+                # Check if this dir contains .log files (it's a pod log dir)
+                log_files = [f for f in entry.iterdir() if f.is_file() and f.suffix == ".log"]
+                if not log_files:
+                    continue
+                pod_name = entry.name
+                for log_file in log_files:
+                    container = log_file.stem.replace("-previous", "")
+                    try:
+                        log_entries.extend(
+                            self._parse_log_file(log_file, "default", pod_name, container)
+                        )
+                    except Exception as e:
+                        logger.warning("Error parsing log %s: %s", log_file, e)
+
+        return log_entries
+
+    def _parse_log_file(
+        self, path: Path, namespace: str, pod_name: str, container: str
+    ) -> list[dict]:
+        """Parse a single log file into structured entries."""
+        entries: list[dict] = []
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                # Read up to 5000 lines per file to avoid memory issues
+                for i, line in enumerate(f):
+                    if i >= MAX_LOG_LINES_PER_FILE:
+                        break
+                    line = line.strip()
+                    if not line:
+                        continue
+
+                    entry = {
+                        "namespace": namespace,
+                        "pod": pod_name,
+                        "container": container,
+                        "message": line,
+                        "source": f"{namespace}/{pod_name}/{container}",
+                        "timestamp": None,
+                        "level": "info",
+                    }
+
+                    # Try to extract timestamp from beginning of line
+                    # Common formats: ISO 8601, or k8s log format
+                    ts_match = re.match(
+                        r"^(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[\w:.+-]*)\s*",
+                        line,
+                    )
+                    if ts_match:
+                        entry["timestamp"] = ts_match.group(1)
+
+                    # Determine log level
+                    line_lower = line.lower()
+                    if any(
+                        kw in line_lower
+                        for kw in ["error", "fatal", "panic", "exception", "traceback"]
+                    ):
+                        entry["level"] = "error"
+                    elif any(kw in line_lower for kw in ["warn", "warning"]):
+                        entry["level"] = "warn"
+
+                    entries.append(entry)
+        except OSError as e:
+            logger.warning("Could not read log file %s: %s", path, e)
+
+        return entries
+
+    def _parse_host_info(self) -> dict[str, str]:
+        """Parse host-collectors/system/ text files."""
+        host_dir = self._root / "host-collectors" / "system"
+        info: dict[str, str] = {}
+
+        if not host_dir.exists() or not host_dir.is_dir():
+            # Try alternative path
+            host_dir = self._root / "host-collectors"
+            if not host_dir.exists():
+                return info
+
+        for txt_file in host_dir.rglob("*.txt"):
+            try:
+                with open(txt_file, "r", encoding="utf-8", errors="replace") as f:
+                    content = f.read(MAX_HOST_FILE_BYTES)
+                info[txt_file.stem] = content
+            except OSError:
+                pass
+
+        return info
+
+    def _parse_analysis_json(self) -> dict | None:
+        """Parse existing analysis.json if present."""
+        path = self._root / "analysis.json"
+        return self._parse_json_file(path)
+
+    @staticmethod
+    def _extract_items(data: Any) -> list[dict]:
+        """Extract items from a Kubernetes List object or return as-is if already a list."""
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            if "items" in data and isinstance(data["items"], list):
+                return data["items"]
+            return [data]
+        return []

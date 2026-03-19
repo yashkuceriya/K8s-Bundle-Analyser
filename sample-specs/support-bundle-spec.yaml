@@ -1,0 +1,45 @@
+apiVersion: troubleshoot.sh/v1beta2
+kind: SupportBundle
+metadata:
+  name: sample-bundle
+spec:
+  collectors:
+    - clusterInfo: {}
+    - clusterResources: {}
+    - logs:
+        selector:
+          - app
+        limits:
+          maxLines: 10000
+          maxAge: 72h
+  analyzers:
+    - clusterVersion:
+        outcomes:
+          - fail:
+              when: "< 1.26.0"
+              message: Cluster version is too old
+          - pass:
+              message: Cluster version is OK
+    - nodeResources:
+        checkName: Node resources
+        outcomes:
+          - fail:
+              when: "count() < 1"
+              message: No nodes found
+          - warn:
+              when: "count() < 3"
+              message: Fewer than 3 nodes
+          - pass:
+              message: Sufficient nodes
+    - deploymentStatus:
+        name: app-deployment
+        namespace: default
+        outcomes:
+          - fail:
+              when: "< 1"
+              message: App deployment not found
+          - warn:
+              when: "= 1"
+              message: Only 1 replica running
+          - pass:
+              message: App deployment healthy

@@ -6,6 +6,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ ./app/
+COPY .env* ./
 
 RUN addgroup --system app && adduser --system --ingroup app app
 
@@ -16,4 +17,5 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
 
 USER app
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "2"]
+ENV PORT=8001
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --workers 2

@@ -2,7 +2,7 @@ import axios from 'axios';
 import type { BundleInfo, AnalysisResult, ChatRequest, ChatResponse, AnalysisHistoryEntry, CompareRequest, CompareResponse } from '../types';
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '/api',
+  baseURL: import.meta.env.VITE_API_URL || (typeof window !== 'undefined' && window.location.hostname !== 'localhost' ? 'https://k8s-bundle-analyser-production.up.railway.app/api' : '/api'),
 });
 
 export async function uploadBundle(file: File): Promise<BundleInfo> {

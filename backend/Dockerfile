@@ -6,16 +6,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ ./app/
-COPY .env* ./
-
-RUN addgroup --system app && adduser --system --ingroup app app
 
 EXPOSE 8001
 
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"
-
-USER app
-
-ENV PORT=8001
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --workers 2
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8001}

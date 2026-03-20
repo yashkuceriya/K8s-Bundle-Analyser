@@ -10,18 +10,22 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql://postgres:FoEOdZZtTKEQAoGqsOnrZbhyVwJExbsd@autorack.proxy.rlwy.net:23456/railway"
-)
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
 # Handle Railway's postgres:// vs postgresql://
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-engine = create_engine(DATABASE_URL, pool_size=5, max_overflow=10, pool_pre_ping=True)
-SessionLocal = sessionmaker(bind=engine)
+engine = None
+SessionLocal = None
 Base = declarative_base()
+
+if DATABASE_URL:
+    try:
+        engine = create_engine(DATABASE_URL, pool_size=5, max_overflow=10, pool_pre_ping=True)
+        SessionLocal = sessionmaker(bind=engine)
+    except Exception as e:
+        logger.warning("Failed to create DB engine: %s", e)
 
 
 class BundleRecord(Base):
@@ -90,6 +94,9 @@ class ChatMessage(Base):
 
 def init_db():
     """Create all tables."""
+    if not engine:
+        logger.info("No DATABASE_URL configured, skipping DB init")
+        return
     try:
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables created/verified")
@@ -99,6 +106,8 @@ def init_db():
 
 def get_db():
     """Get a database session."""
+    if not SessionLocal:
+        return None
     db = SessionLocal()
     try:
         yield db

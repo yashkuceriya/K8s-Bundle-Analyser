@@ -19,7 +19,7 @@ class AIAnalyzer:
         self.model = os.environ.get("OPENROUTER_MODEL", "anthropic/claude-sonnet-4")
         self.base_url = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 
-    def analyze(self, parsed_data: dict[str, Any], heuristic_issues: list[Issue]) -> dict:
+    def analyze(self, parsed_data: dict[str, Any], heuristic_issues: list[Issue], bundle_id: str = "") -> dict:
         """
         Run AI analysis on parsed bundle data.
 
@@ -37,7 +37,31 @@ class AIAnalyzer:
                 base_url=self.base_url,
                 timeout=60.0,
             )
+
+            # Try RAG-enhanced context with per-issue evidence
+            rag_evidence = ""
+            if bundle_id:
+                try:
+                    from app.rag.retriever import retrieve_for_analysis
+                    evidence_map = retrieve_for_analysis(bundle_id, heuristic_issues, n_per_issue=4)
+                    if evidence_map:
+                        sections = []
+                        for issue_id, chunks in evidence_map.items():
+                            if chunks:
+                                issue = next((i for i in heuristic_issues if i.id == issue_id), None)
+                                label = issue.title if issue else issue_id
+                                chunk_text = "\n".join(c["content"][:300] for c in chunks[:3])
+                                sections.append(f"## Evidence for: {label}\n{chunk_text}")
+                        if sections:
+                            rag_evidence = "\n\n".join(sections)
+                            logger.info("RAG retrieved evidence for %d issues", len(sections))
+                except Exception as e:
+                    logger.warning("RAG evidence retrieval failed: %s", e)
+
             context = self._build_context(parsed_data, heuristic_issues)
+            if rag_evidence:
+                context = f"{context}\n\n## Additional Retrieved Evidence\n{rag_evidence}"
+
             system_prompt = self._build_system_prompt()
 
             logger.info("Sending analysis request to %s via OpenRouter...", self.model)

@@ -20,9 +20,10 @@ _REFUSAL_MESSAGE = (
 class BundleChat:
     """Conversational Q&A interface for analyzed K8s support bundles."""
 
-    def __init__(self, parsed_data: dict, analysis_result: Any) -> None:
+    def __init__(self, parsed_data: dict, analysis_result: Any, bundle_id: str = "") -> None:
         self.parsed_data = parsed_data
         self.analysis_result = analysis_result
+        self._bundle_id = bundle_id
 
     def ask(self, question: str, history: list[dict] | None = None) -> str:
         """Answer a question about the bundle.
@@ -82,7 +83,15 @@ class BundleChat:
 
         client = OpenAI(api_key=api_key, base_url=base_url, timeout=60.0)
 
-        context = self._build_context()
+        # Try RAG-enhanced context first
+        rag_context = ""
+        try:
+            from app.rag.retriever import build_rag_context
+            rag_context = build_rag_context(question, self._bundle_id if hasattr(self, '_bundle_id') else "", max_tokens=4000)
+        except Exception:
+            pass
+
+        context = rag_context if rag_context else self._build_context()
         system_prompt = (
             "You are a professional Kubernetes cluster diagnostics assistant. "
             "You have access to a specific K8s support bundle. Your role is strictly "

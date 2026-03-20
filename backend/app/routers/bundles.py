@@ -37,6 +37,8 @@ from app.analyzers.ai_analyzer import AIAnalyzer
 from app.analyzers.log_correlator import LogCorrelator
 from app.analyzers.chat import BundleChat
 from app.analyzers.preflight_generator import PreflightGenerator
+from app.rag.chunker import chunk_bundle
+from app.rag.vector_store import index_chunks, get_chunk_count, delete_bundle_chunks
 from app.persistence import save_bundle, update_bundle_status, save_analysis, load_all_bundles as db_load_bundles, load_latest_analysis, load_analysis_history as db_load_history, delete_bundle as db_delete_bundle, is_db_available
 
 
@@ -295,7 +297,7 @@ async def analyze_bundle(bundle_id: str):
         # Step 3: Run AI analysis (in thread to avoid blocking event loop)
         import asyncio
         ai_analyzer = AIAnalyzer()
-        ai_result = await asyncio.to_thread(ai_analyzer.analyze, parsed_data, heuristic_issues)
+        ai_result = await asyncio.to_thread(ai_analyzer.analyze, parsed_data, heuristic_issues, bundle_id)
 
         # Step 4: Merge AI additional issues into the issues list
         all_issues = list(heuristic_issues)
@@ -432,6 +434,15 @@ async def analyze_bundle(bundle_id: str):
         _analyses[bundle_id] = result
         _save_analysis(bundle_id, result)
         save_analysis(bundle_id, result.model_dump(mode="json"))
+
+        # Step 13: Chunk and index for RAG
+        try:
+            chunks = chunk_bundle(bundle_id, parsed_data)
+            indexed = index_chunks(chunks)
+            logger.info("Indexed %d chunks for bundle %s", indexed, bundle_id)
+        except Exception as e:
+            logger.warning("RAG indexing failed (non-fatal): %s", e)
+
         _save_bundle_info(bundle_id, bundle)
         bundle.status = BundleStatus.completed
         logger.info("Analysis complete for bundle %s: %d issues found", bundle_id, len(all_issues))
@@ -472,6 +483,11 @@ async def delete_bundle(bundle_id: str):
         logger.info("Deleted bundle files at %s", bundle_dir)
 
     db_delete_bundle(bundle_id)
+
+    try:
+        delete_bundle_chunks(bundle_id)
+    except Exception:
+        pass
 
     # Remove from in-memory stores
     del _bundles[bundle_id]
@@ -560,7 +576,7 @@ async def chat_with_bundle(bundle_id: str, body: ChatRequest):
 
     analysis = _analyses[bundle_id]
 
-    chat = BundleChat(parsed, analysis)
+    chat = BundleChat(parsed, analysis, bundle_id=bundle_id)
     history = [{"role": m.role, "content": m.content} for m in body.history]
 
     try:

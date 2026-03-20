@@ -56,12 +56,20 @@ export default function Dashboard() {
   const [uploadedBundle, setUploadedBundle] = useState<BundleInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const hasLoadedOnce = useRef(false);
   const fetchBundles = useCallback(async () => {
     try {
       const data = await getBundles();
       setBundles(data);
+      setError(null);
+      hasLoadedOnce.current = true;
     } catch {
-      setError('Failed to load bundles.');
+      // Only show the error banner after the first successful load,
+      // so the initial page render doesn't flash "Failed to load bundles"
+      // when the backend is still starting up.
+      if (hasLoadedOnce.current) {
+        setError('Failed to load bundles.');
+      }
     } finally {
       setLoading(false);
     }

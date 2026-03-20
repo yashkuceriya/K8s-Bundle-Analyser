@@ -61,7 +61,7 @@ export interface TimelineEvent {
   type: string;
   message: string;
   severity: string;
-  resource: string;
+  resource?: string;
 }
 
 export interface ProposedFix {

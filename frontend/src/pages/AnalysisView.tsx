@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area, Label } from 'recharts';
 import {
   LayoutDashboard,
@@ -173,6 +173,12 @@ export default function AnalysisView() {
         <div className="flex flex-col items-center justify-center h-[80vh] gap-4">
           <AlertTriangle size={48} className="text-red-400" />
           <p className="text-gray-400">{error || 'Analysis not found'}</p>
+          <Link
+            to="/"
+            className="mt-2 text-sm text-[#06b6d4] hover:text-cyan-300 transition-colors hover:underline"
+          >
+            Go back to Dashboard
+          </Link>
         </div>
       </div>
     );
@@ -1048,8 +1054,8 @@ function LogViewerTab({ logs }: { logs: LogEntry[] }) {
   const filtered = useMemo(() => {
     return logs.filter((log) => {
       if (levelFilter !== 'all' && log.level.toLowerCase() !== levelFilter) return false;
-      if (nsFilter !== 'all' && log.namespace !== nsFilter) return false;
-      if (podFilter !== 'all' && log.pod !== podFilter) return false;
+      if (nsFilter !== 'all' && (log.namespace ?? '') !== nsFilter) return false;
+      if (podFilter !== 'all' && (log.pod ?? '') !== podFilter) return false;
       if (searchText) {
         const q = searchText.toLowerCase();
         return log.message.toLowerCase().includes(q) || log.source.toLowerCase().includes(q);
@@ -1163,8 +1169,8 @@ function LogViewerTab({ logs }: { logs: LogEntry[] }) {
                     })()}
                   </td>
                   <td className="px-4 py-2">{levelBadge(log.level)}</td>
-                  <td className="px-4 py-2 text-xs text-gray-400 font-mono truncate max-w-[200px]">{log.source}</td>
-                  <td className="px-4 py-2 text-xs text-gray-300 font-mono">{log.message}</td>
+                  <td className="px-4 py-2 text-xs text-gray-400 font-mono truncate max-w-[200px]">{log.source || '—'}</td>
+                  <td className="px-4 py-2 text-xs text-gray-300 font-mono">{log.message || '—'}</td>
                 </tr>
               ))}
               {filtered.length === 0 && (

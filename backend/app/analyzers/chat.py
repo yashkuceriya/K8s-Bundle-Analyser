@@ -25,7 +25,7 @@ class BundleChat:
         self.analysis_result = analysis_result
         self._bundle_id = bundle_id
 
-    def ask(self, question: str, history: list[dict] | None = None) -> str:
+    def ask(self, question: str, history: list[dict] | None = None) -> dict:
         """Answer a question about the bundle.
 
         Args:
@@ -34,22 +34,22 @@ class BundleChat:
                      ``role`` ("user"/"assistant") and ``content``.
 
         Returns:
-            The answer string.
+            A dict with ``answer`` (str) and ``sources`` (list).
         """
         # --- Guardrail: input validation ---
         violation = self._check_guardrails(question)
         if violation:
-            return violation
+            return {"answer": violation, "sources": []}
 
         api_key = os.environ.get("OPENROUTER_API_KEY", "") or os.environ.get("ANTHROPIC_API_KEY", "")
         if not api_key:
-            return self._fallback_answer(question)
+            return {"answer": self._fallback_answer(question), "sources": []}
 
         try:
             return self._ask_llm(question, history or [], api_key)
         except Exception as exc:
             logger.error("Chat LLM call failed: %s", exc)
-            return self._fallback_answer(question)
+            return {"answer": self._fallback_answer(question), "sources": []}
 
     # ------------------------------------------------------------------
     # Guardrails
@@ -75,7 +75,7 @@ class BundleChat:
     # LLM-powered path (via OpenRouter)
     # ------------------------------------------------------------------
 
-    def _ask_llm(self, question: str, history: list[dict], api_key: str) -> str:
+    def _ask_llm(self, question: str, history: list[dict], api_key: str) -> dict:
         from openai import OpenAI
 
         base_url = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
@@ -88,6 +88,23 @@ class BundleChat:
         try:
             from app.rag.retriever import build_rag_context
             rag_context = build_rag_context(question, self._bundle_id if hasattr(self, '_bundle_id') else "", max_tokens=4000)
+        except Exception:
+            pass
+
+        # Track retrieval sources
+        retrieval_sources = []
+        try:
+            from app.rag.retriever import retrieve_for_question
+            retrieved_chunks = retrieve_for_question(question, self._bundle_id, n_results=8)
+            for chunk in retrieved_chunks[:5]:
+                meta = chunk.get("metadata", {})
+                retrieval_sources.append({
+                    "type": meta.get("chunk_type", "unknown"),
+                    "namespace": meta.get("namespace", ""),
+                    "pod": meta.get("pod", ""),
+                    "severity": meta.get("severity", ""),
+                    "relevance": round(1 - chunk.get("distance", 0), 2),
+                })
         except Exception:
             pass
 
@@ -134,7 +151,7 @@ class BundleChat:
             messages=messages,
         )
 
-        return response.choices[0].message.content or ""
+        return {"answer": response.choices[0].message.content or "", "sources": retrieval_sources}
 
     # ------------------------------------------------------------------
     # Context builder

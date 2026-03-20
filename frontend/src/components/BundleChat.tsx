@@ -78,7 +78,7 @@ export default function BundleChat({ bundleId }: BundleChatProps) {
         question: trimmed,
         history: messages,
       });
-      const assistantMessage: ChatMessage = { role: 'assistant', content: response.answer };
+      const assistantMessage: ChatMessage = { role: 'assistant', content: response.answer, sources: response.sources };
       setMessages([...updatedHistory, assistantMessage]);
     } catch {
       setError('Failed to get a response. Please try again.');
@@ -141,10 +141,24 @@ export default function BundleChat({ bundleId }: BundleChatProps) {
               }`}
             >
               {msg.role === 'assistant' ? (
-                <div
-                  className="leading-relaxed [&_pre]:my-1 [&_ul]:my-1 [&_li]:text-gray-300"
-                  dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
-                />
+                <>
+                  <div
+                    className="leading-relaxed [&_pre]:my-1 [&_ul]:my-1 [&_li]:text-gray-300"
+                    dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
+                  />
+                  {msg.sources && msg.sources.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-navy-600">
+                      <p className="text-[10px] text-gray-500 mb-1">Sources:</p>
+                      <div className="flex flex-wrap gap-1">
+                        {msg.sources.filter(s => s.startsWith('[RAG')).slice(0, 4).map((s, i) => (
+                          <span key={i} className="text-[9px] bg-navy-800 border border-navy-600 rounded px-1.5 py-0.5 text-gray-500">
+                            {s}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
               ) : (
                 <p className="leading-relaxed whitespace-pre-line">{msg.content}</p>
               )}

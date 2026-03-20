@@ -264,6 +264,64 @@ async def list_bundles():
     return list(_bundles.values())
 
 
+@router.get("/search/cross-bundle")
+async def cross_bundle_search(q: str, n: int = 10):
+    """Search across all bundles for similar issues/patterns."""
+    from app.rag.vector_store import _get_collection
+
+    collection = _get_collection()
+    if not collection or collection.count() == 0:
+        return {"results": [], "total_chunks": 0}
+
+    try:
+        results = collection.query(
+            query_texts=[q],
+            n_results=min(n, collection.count()),
+        )
+
+        hits = []
+        if results and results["documents"]:
+            for i, doc in enumerate(results["documents"][0]):
+                meta = results["metadatas"][0][i] if results["metadatas"] else {}
+                hits.append({
+                    "content": doc[:500],
+                    "bundle_id": meta.get("bundle_id", ""),
+                    "chunk_type": meta.get("chunk_type", ""),
+                    "namespace": meta.get("namespace", ""),
+                    "severity": meta.get("severity", ""),
+                    "distance": results["distances"][0][i] if results["distances"] else 0,
+                })
+
+        return {
+            "query": q,
+            "results": hits,
+            "total_chunks": collection.count(),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Search failed: {e}")
+
+
+@router.get("/{bundle_id}/chunks")
+async def get_bundle_chunks(bundle_id: str):
+    """Get chunk/indexing stats for a bundle."""
+    if bundle_id not in _bundles:
+        raise HTTPException(status_code=404, detail="Bundle not found")
+
+    from app.rag.vector_store import get_chunk_count
+    from app.persistence import get_chunk_stats
+
+    vector_count = get_chunk_count(bundle_id)
+    db_stats = get_chunk_stats(bundle_id)
+
+    return {
+        "bundle_id": bundle_id,
+        "vector_store_chunks": vector_count,
+        "database_chunks": db_stats.get("total_chunks", 0),
+        "by_type": db_stats.get("by_type", {}),
+        "indexed": vector_count > 0,
+    }
+
+
 @router.get("/{bundle_id}", response_model=BundleInfo)
 async def get_bundle(bundle_id: str):
     """Get info about a specific bundle."""
@@ -440,6 +498,8 @@ async def analyze_bundle(bundle_id: str):
             chunks = chunk_bundle(bundle_id, parsed_data)
             indexed = index_chunks(chunks)
             logger.info("Indexed %d chunks for bundle %s", indexed, bundle_id)
+            from app.persistence import save_chunks
+            save_chunks(chunks)
         except Exception as e:
             logger.warning("RAG indexing failed (non-fatal): %s", e)
 
@@ -581,7 +641,13 @@ async def chat_with_bundle(bundle_id: str, body: ChatRequest):
 
     try:
         import asyncio
-        answer = await asyncio.to_thread(chat.ask, body.question, history)
+        result = await asyncio.to_thread(chat.ask, body.question, history)
+        if isinstance(result, dict):
+            answer = result.get("answer", "")
+            retrieval_sources = result.get("sources", [])
+        else:
+            answer = result
+            retrieval_sources = []
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Chat failed: {exc}")
 
@@ -597,6 +663,17 @@ async def chat_with_bundle(bundle_id: str, body: ChatRequest):
         sources.append("logs")
     if analysis.issues:
         sources.append("analysis_issues")
+
+    # Add RAG retrieval sources
+    for rs in retrieval_sources:
+        src_desc = f"[RAG:{rs.get('type','')}]"
+        if rs.get('namespace'):
+            src_desc += f" ns:{rs['namespace']}"
+        if rs.get('pod'):
+            src_desc += f" pod:{rs['pod']}"
+        if rs.get('relevance'):
+            src_desc += f" (relevance: {rs['relevance']})"
+        sources.append(src_desc)
 
     return ChatResponse(answer=answer, sources=sources)
 

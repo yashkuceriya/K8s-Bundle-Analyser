@@ -182,3 +182,55 @@ def delete_bundle(bundle_id: str) -> None:
         db.close()
     except Exception as e:
         logger.warning("Failed to delete bundle from DB: %s", e)
+
+
+def save_chunks(chunks: list[dict]) -> None:
+    """Save chunk metadata to Postgres for audit/debug."""
+    if not _db_available:
+        return
+    try:
+        from app.database import BundleChunk, SessionLocal as _SessionLocal
+        db = _SessionLocal()
+        for chunk in chunks:
+            meta = chunk.get("metadata", {})
+            existing = db.query(BundleChunk).filter_by(id=chunk["id"]).first()
+            if existing:
+                continue  # skip duplicates
+            db.add(BundleChunk(
+                id=chunk["id"],
+                bundle_id=chunk["bundle_id"],
+                chunk_type=chunk["chunk_type"],
+                content=chunk["content"][:5000],  # truncate for DB
+                namespace=meta.get("namespace"),
+                pod=meta.get("pod"),
+                node=meta.get("node"),
+                resource_kind=meta.get("resource_kind"),
+                resource_name=meta.get("resource_name"),
+                severity=meta.get("severity"),
+                source_path=meta.get("source_path"),
+                token_count=len(chunk["content"].split()),
+                metadata_json=meta,
+            ))
+        db.commit()
+        db.close()
+        logger.info("Saved %d chunk records to Postgres", len(chunks))
+    except Exception as e:
+        logger.warning("Failed to save chunks to DB: %s", e)
+
+
+def get_chunk_stats(bundle_id: str) -> dict:
+    """Get chunk statistics for a bundle from Postgres."""
+    if not _db_available:
+        return {}
+    try:
+        from sqlalchemy import func
+        from app.database import BundleChunk, SessionLocal as _SessionLocal
+        db = _SessionLocal()
+        total = db.query(func.count(BundleChunk.id)).filter_by(bundle_id=bundle_id).scalar() or 0
+        type_rows = db.query(BundleChunk.chunk_type, func.count(BundleChunk.id)).filter_by(bundle_id=bundle_id).group_by(BundleChunk.chunk_type).all()
+        types = {row[0]: row[1] for row in type_rows}
+        db.close()
+        return {"total_chunks": total, "by_type": types}
+    except Exception as e:
+        logger.warning("Failed to get chunk stats: %s", e)
+        return {}

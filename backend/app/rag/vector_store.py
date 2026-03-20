@@ -12,19 +12,37 @@ _collection = None
 
 
 def _get_collection():
-    """Lazy-init ChromaDB collection."""
+    """Lazy-init ChromaDB collection with OpenAI embeddings."""
     global _client, _collection
     if _collection is not None:
         return _collection
     try:
         import chromadb
+        from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
+
         persist_dir = os.environ.get("CHROMA_PERSIST_DIR", "./data/chroma")
         _client = chromadb.PersistentClient(path=persist_dir)
-        _collection = _client.get_or_create_collection(
-            name="bundle_chunks",
-            metadata={"hnsw:space": "cosine"},
-        )
-        logger.info("ChromaDB collection ready (persist=%s, count=%d)", persist_dir, _collection.count())
+
+        # Use OpenAI embeddings if key available, otherwise default
+        openai_key = os.environ.get("OPENAI_API_KEY", "")
+        if openai_key:
+            embedding_fn = OpenAIEmbeddingFunction(
+                api_key=openai_key,
+                model_name="text-embedding-3-small",
+            )
+            _collection = _client.get_or_create_collection(
+                name="bundle_chunks_openai",
+                embedding_function=embedding_fn,
+                metadata={"hnsw:space": "cosine"},
+            )
+            logger.info("ChromaDB using OpenAI text-embedding-3-small (persist=%s, count=%d)", persist_dir, _collection.count())
+        else:
+            _collection = _client.get_or_create_collection(
+                name="bundle_chunks",
+                metadata={"hnsw:space": "cosine"},
+            )
+            logger.info("ChromaDB using default embeddings (persist=%s, count=%d)", persist_dir, _collection.count())
+
         return _collection
     except Exception as e:
         logger.warning("ChromaDB unavailable: %s", e)

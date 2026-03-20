@@ -6,6 +6,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 logger = logging.getLogger(__name__)
 
 MAX_LOG_LINES_PER_FILE = 5000
@@ -77,6 +79,9 @@ class BundleParser:
         sc_raw = self._parse_json_file(self._root / "cluster-resources" / "storage-classes.json")
         data["storage_classes"] = self._extract_items(sc_raw) if sc_raw else []
 
+        # Scan for YAML resources (handles non-standard bundle formats)
+        self._scan_yaml_resources(data)
+
         # Summary counts
         logger.info(
             "Parsed: %d pods, %d deployments, %d services, %d nodes, %d events, %d log entries",
@@ -96,6 +101,51 @@ class BundleParser:
         except (json.JSONDecodeError, OSError) as e:
             logger.warning("Could not parse %s: %s", path, e)
         return None
+
+    def _parse_yaml_file(self, path: Path) -> Any:
+        """Safely parse a single YAML file."""
+        try:
+            if path.exists() and path.is_file():
+                with open(path, "r", encoding="utf-8", errors="replace") as f:
+                    return yaml.safe_load(f)
+        except (yaml.YAMLError, OSError) as e:
+            logger.warning("Could not parse YAML %s: %s", path, e)
+        return None
+
+    def _parse_data_file(self, path: Path) -> Any:
+        """Parse a JSON or YAML file based on extension."""
+        if path.suffix in (".yaml", ".yml"):
+            return self._parse_yaml_file(path)
+        return self._parse_json_file(path)
+
+    def _scan_yaml_resources(self, data: dict[str, Any]) -> None:
+        """Scan extracted directory for YAML resource files and merge into parsed data."""
+        # Look for pod-status/, events/, cluster-resources/ with .yaml files
+        for yaml_file in self._root.rglob("*.yaml"):
+            try:
+                content = self._parse_yaml_file(yaml_file)
+                if not content or not isinstance(content, dict):
+                    continue
+                kind = content.get("kind", "").lower()
+                relative = str(yaml_file.relative_to(self._root))
+
+                if kind == "pod" or (kind == "" and "pod" in relative.lower()):
+                    items = self._extract_items(content)
+                    data["pods"].extend(items)
+                elif kind == "podlist":
+                    data["pods"].extend(self._extract_items(content))
+                elif kind == "deployment" or kind == "deploymentlist":
+                    data["deployments"].extend(self._extract_items(content))
+                elif kind == "service" or kind == "servicelist":
+                    data["services"].extend(self._extract_items(content))
+                elif kind == "node" or kind == "nodelist":
+                    data["nodes"].extend(self._extract_items(content))
+                elif kind == "event" or kind == "eventlist":
+                    data["events"].extend(self._extract_items(content))
+                elif kind == "persistentvolume" or kind == "persistentvolumelist":
+                    data["pvs"].extend(self._extract_items(content))
+            except Exception as e:
+                logger.warning("Error scanning YAML %s: %s", yaml_file, e)
 
     def _parse_cluster_version(self) -> dict | None:
         """Parse cluster-info/cluster_version.json."""

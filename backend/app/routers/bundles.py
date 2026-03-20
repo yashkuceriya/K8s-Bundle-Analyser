@@ -37,6 +37,7 @@ from app.analyzers.ai_analyzer import AIAnalyzer
 from app.analyzers.log_correlator import LogCorrelator
 from app.analyzers.chat import BundleChat
 from app.analyzers.preflight_generator import PreflightGenerator
+from app.persistence import save_bundle, update_bundle_status, save_analysis, load_all_bundles as db_load_bundles, load_latest_analysis, load_analysis_history as db_load_history, delete_bundle as db_delete_bundle, is_db_available
 
 
 # --- Chat models ---
@@ -126,6 +127,18 @@ def _load_all_bundles() -> None:
         except Exception as e:
             logger.warning("Failed to load bundle from %s: %s", bundle_dir, e)
 
+    # Also load from database if available
+    if is_db_available():
+        db_bundles = db_load_bundles()
+        for b in db_bundles:
+            if b["id"] not in _bundles:
+                try:
+                    info = BundleInfo.model_validate(b)
+                    _bundles[info.id] = info
+                    logger.info("Loaded bundle from DB: %s", info.id)
+                except Exception as e:
+                    logger.warning("Failed to load bundle from DB: %s", e)
+
 
 def _load_all_analyses() -> None:
     """Load latest_analysis.json for each bundle into memory."""
@@ -145,6 +158,19 @@ def _load_all_analyses() -> None:
             logger.info("Loaded persisted analysis for bundle: %s", result.bundle_id)
         except Exception as e:
             logger.warning("Failed to load analysis from %s: %s", bundle_dir, e)
+
+    # Also load from database if available
+    if is_db_available():
+        for bundle_id in list(_bundles.keys()):
+            if bundle_id not in _analyses:
+                db_analysis = load_latest_analysis(bundle_id)
+                if db_analysis:
+                    try:
+                        result = AnalysisResult.model_validate(db_analysis)
+                        _analyses[result.bundle_id] = result
+                        logger.info("Loaded analysis from DB for: %s", bundle_id)
+                    except Exception as e:
+                        logger.warning("Failed to load analysis from DB: %s", e)
 
 
 def _ensure_parsed_data(bundle_id: str) -> dict:
@@ -225,6 +251,7 @@ async def upload_bundle(file: UploadFile = File(...)):
     )
     _bundles[bundle_id] = bundle_info
     _save_bundle_info(bundle_id, bundle_info)
+    save_bundle(bundle_id, bundle_info.filename, bundle_info.status.value, bundle_info.file_path)
 
     return bundle_info
 
@@ -404,6 +431,7 @@ async def analyze_bundle(bundle_id: str):
 
         _analyses[bundle_id] = result
         _save_analysis(bundle_id, result)
+        save_analysis(bundle_id, result.model_dump(mode="json"))
         _save_bundle_info(bundle_id, bundle)
         bundle.status = BundleStatus.completed
         logger.info("Analysis complete for bundle %s: %d issues found", bundle_id, len(all_issues))
@@ -442,6 +470,8 @@ async def delete_bundle(bundle_id: str):
     if bundle_dir.exists():
         shutil.rmtree(bundle_dir, ignore_errors=True)
         logger.info("Deleted bundle files at %s", bundle_dir)
+
+    db_delete_bundle(bundle_id)
 
     # Remove from in-memory stores
     del _bundles[bundle_id]
@@ -582,6 +612,15 @@ async def get_analysis_history(bundle_id: str):
             ))
         except Exception as e:
             logger.warning("Failed to read history file %s: %s", f, e)
+
+    # Supplement with DB history
+    if is_db_available():
+        db_history = db_load_history(bundle_id)
+        # Merge — add DB entries that aren't already in file-based history
+        existing_timestamps = {e.analyzed_at.isoformat() if hasattr(e, 'analyzed_at') else str(e.get('analyzed_at', '')) for e in entries}
+        for entry in db_history:
+            if entry["analyzed_at"] not in existing_timestamps:
+                entries.append(AnalysisHistoryEntry.model_validate(entry))
 
     return entries
 

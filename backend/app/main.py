@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import bundles
 from app.routers.bundles import _load_all_bundles, _load_all_analyses
+from app.persistence import try_init_db
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,7 @@ BUNDLES_DIR = DATA_DIR / "bundles"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application startup and shutdown lifecycle."""
+    try_init_db()
     BUNDLES_DIR.mkdir(parents=True, exist_ok=True)
     logger.info("Data directory ready at %s", DATA_DIR)
     logger.info("Bundles directory ready at %s", BUNDLES_DIR)

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer } from 'recharts';
 import {
   LayoutDashboard,
   AlertTriangle,
@@ -16,7 +16,6 @@ import {
   RefreshCw,
   HelpCircle,
   Sparkles,
-  CheckCircle,
   AlertCircle,
 } from 'lucide-react';
 import { format } from 'date-fns';
@@ -322,171 +321,94 @@ function OverviewTab({
 }) {
   const { cluster_health: health, issues, summary } = analysis;
 
+  // Issue categories for the bar chart
+  const categoryData = useMemo(() => {
+    const counts: Record<string, number> = {};
+    issues.forEach(i => { counts[i.category] = (counts[i.category] || 0) + 1; });
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 6);
+  }, [issues]);
+
   return (
-    <div className="flex gap-6 max-w-screen-2xl">
-      {/* Left Column - Health Metrics */}
-      <div className="w-[340px] shrink-0 space-y-5">
-        {/* Cluster Health */}
-        <div className="bg-navy-800 border border-navy-700 rounded-xl p-6">
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-6">Cluster Health</h3>
-          <div className="flex justify-center">
-            <HealthScore score={health.score} size={200} trend={historyData.length > 1 ? historyData.map(h => h.health_score) : undefined} />
+    <div className="space-y-6 max-w-screen-2xl">
+      {/* Stats Row — single glanceable strip */}
+      <div className="grid grid-cols-5 gap-4">
+        {/* Health Score */}
+        <div className="col-span-1 bg-navy-800 border border-navy-700 rounded-xl p-5 flex flex-col items-center justify-center">
+          <HealthScore score={health.score} size={120} trend={historyData.length > 1 ? historyData.map(h => h.health_score) : undefined} />
+        </div>
+
+        {/* Critical */}
+        <div className="bg-navy-800 border border-navy-700 rounded-xl p-5 flex flex-col justify-between">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertCircle size={16} className="text-red-400" />
+            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Critical</span>
           </div>
-          <div className="mt-6 pt-4 border-t border-navy-700">
+          <span className="text-4xl font-bold text-red-400" style={{ textShadow: '0 0 20px rgba(239,68,68,0.3)' }}>{health.critical_count}</span>
+          <span className="text-[10px] text-gray-600 mt-1">issues need attention</span>
+        </div>
+
+        {/* Warnings */}
+        <div className="bg-navy-800 border border-navy-700 rounded-xl p-5 flex flex-col justify-between">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle size={16} className="text-amber-400" />
+            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Warnings</span>
+          </div>
+          <span className="text-4xl font-bold text-amber-400" style={{ textShadow: '0 0 20px rgba(245,158,11,0.3)' }}>{health.warning_count}</span>
+          <span className="text-[10px] text-gray-600 mt-1">potential concerns</span>
+        </div>
+
+        {/* Nodes & Pods */}
+        <div className="bg-navy-800 border border-navy-700 rounded-xl p-5 flex flex-col justify-between">
+          <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Infrastructure</span>
+          <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-gray-500 uppercase tracking-wider">Analyzed Pods</span>
+              <span className="text-xs text-gray-400">Nodes</span>
+              <span className="text-sm font-bold text-white">{health.node_count}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-400">Pods</span>
               <span className="text-sm font-bold text-white">{health.pod_count}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-400">Namespaces</span>
+              <span className="text-sm font-bold text-white">{health.namespace_count}</span>
             </div>
           </div>
         </div>
 
-        {/* AI Insight */}
-        {summary && (
-          <div className="bg-navy-800 border border-navy-700 rounded-xl p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <Sparkles size={16} className="text-accent-blue" />
-              <span className="text-xs font-semibold text-accent-blue uppercase tracking-wider">AI Insight</span>
-            </div>
-            <p className="text-sm text-gray-400 italic leading-relaxed">&ldquo;{summary.length > 200 ? summary.slice(0, 200) + '...' : summary}&rdquo;</p>
-            <div className="flex gap-2 mt-3">
-              <span className="text-[10px] px-2 py-0.5 bg-accent-blue/10 text-accent-blue rounded-full font-medium">Optimization</span>
-              <span className="text-[10px] px-2 py-0.5 bg-accent-green/10 text-accent-green rounded-full font-medium">Recommended</span>
-            </div>
+        {/* Issue Categories */}
+        <div className="bg-navy-800 border border-navy-700 rounded-xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">By Category</span>
+            <span className="text-[10px] text-gray-600">{issues.length} total</span>
           </div>
-        )}
-
-        {/* Severity Summary */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between bg-navy-800 border border-navy-700 rounded-xl px-5 py-3.5">
-            <div className="flex items-center gap-2">
-              <AlertCircle size={16} className="text-red-400" />
-              <span className="text-sm text-gray-300">Critical Issues</span>
-            </div>
-            <span className="text-lg font-bold text-red-400">{health.critical_count}</span>
-          </div>
-          <div className="flex items-center justify-between bg-navy-800 border border-navy-700 rounded-xl px-5 py-3.5">
-            <div className="flex items-center gap-2">
-              <AlertTriangle size={16} className="text-amber-400" />
-              <span className="text-sm text-gray-300">Warnings</span>
-            </div>
-            <span className="text-lg font-bold text-amber-400">{health.warning_count}</span>
-          </div>
-          <div className="flex items-center justify-between bg-navy-800 border border-navy-700 rounded-xl px-5 py-3.5">
-            <div className="flex items-center gap-2">
-              <CheckCircle size={16} className="text-accent-green" />
-              <span className="text-sm text-gray-300">Passed Checks</span>
-            </div>
-            <span className="text-lg font-bold text-accent-green">{Math.max(0, health.pod_count - health.critical_count - health.warning_count)}</span>
+          <div className="h-28">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={categoryData} layout="vertical" margin={{ left: 0, right: 4, top: 0, bottom: 0 }}>
+                <XAxis type="number" hide />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: '#6b7280' }} width={72} axisLine={false} tickLine={false} />
+                <Bar dataKey="value" fill="#06b6d4" radius={[0, 4, 4, 0]} barSize={10} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </div>
       </div>
 
-      {/* Right Column - Charts & Findings */}
-      <div className="flex-1 space-y-6 min-w-0">
-        {/* Charts Row */}
-        <div className="grid grid-cols-2 gap-6">
-          {/* Severity Distribution - Vertical Bar Chart */}
-          <div className="bg-navy-800 border border-navy-700 rounded-xl p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-white uppercase tracking-wider">Severity Distribution</h3>
-              <span className="text-[10px] text-gray-500">Total Events: {issues.length}</span>
-            </div>
-            <div className="h-48">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={[
-                  { name: 'CRITICAL', value: health.critical_count, fill: '#ef4444' },
-                  { name: 'WARNING', value: health.warning_count, fill: '#f59e0b' },
-                  { name: 'INFO', value: health.info_count, fill: '#3b82f6' },
-                ]} barGap={8}>
-                  <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} allowDecimals={false} />
-                  <Tooltip contentStyle={{ backgroundColor: '#1a2332', border: '1px solid #243044', borderRadius: '8px' }} />
-                  <Bar dataKey="value" radius={[4, 4, 0, 0]} barSize={40}>
-                    {[
-                      { fill: '#ef4444' },
-                      { fill: '#f59e0b' },
-                      { fill: '#3b82f6' },
-                    ].map((entry, index) => (
-                      <Cell key={index} fill={entry.fill} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+      {/* AI Summary + Insights */}
+      {(summary || (analysis.ai_insights && analysis.ai_insights.length > 0)) && (
+        <div className="bg-navy-800 border border-navy-700 rounded-xl p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles size={16} className="text-accent-blue" />
+            <h3 className="text-sm font-semibold text-white uppercase tracking-wider">AI Analysis</h3>
           </div>
-
-          {/* Workload Status */}
-          <div className="bg-navy-800 border border-navy-700 rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-white uppercase tracking-wider mb-4">Workload Status</h3>
-            <div className="h-48 relative">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={[
-                      { name: 'Healthy', value: Math.max(0, health.pod_count - health.critical_count - health.warning_count) },
-                      { name: 'Warning', value: health.warning_count },
-                      { name: 'Critical', value: health.critical_count },
-                    ].filter(d => d.value > 0)}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={50}
-                    outerRadius={75}
-                    startAngle={90}
-                    endAngle={-270}
-                    dataKey="value"
-                  >
-                    <Cell fill="#10b981" />
-                    {health.warning_count > 0 && <Cell fill="#f59e0b" />}
-                    {health.critical_count > 0 && <Cell fill="#ef4444" />}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-2xl font-bold text-white">{health.pod_count}</span>
-                <span className="text-[10px] text-gray-500 uppercase tracking-wider">Total Pods</span>
-              </div>
-            </div>
-            <div className="flex justify-center gap-6 mt-2">
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                <span className="text-[10px] text-gray-500">Healthy</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-amber-400" />
-                <span className="text-[10px] text-gray-500">Warning</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-red-400" />
-                <span className="text-[10px] text-gray-500">Critical</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Top Critical Findings */}
-        <div>
-          <h3 className="text-sm font-semibold text-white uppercase tracking-wider mb-4">Top 5 Critical Findings</h3>
-          <div className="space-y-3">
-            {issues
-              .sort((a, b) => {
-                const order: Record<string, number> = { critical: 0, warning: 1, info: 2 };
-                return (order[a.severity] ?? 3) - (order[b.severity] ?? 3);
-              })
-              .slice(0, 5)
-              .map((issue) => (
-                <IssueCard key={issue.id} issue={issue} />
-              ))}
-          </div>
-        </div>
-
-        {/* AI Bundle Insights */}
-        {analysis.ai_insights && analysis.ai_insights.length > 0 && (
-          <div className="bg-navy-800 border border-navy-700 rounded-xl p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <Sparkles size={16} className="text-accent-blue" />
-              <h3 className="text-sm font-semibold text-white uppercase tracking-wider">AI Bundle Insights</h3>
-            </div>
-            <ul className="space-y-2.5">
+          {summary && (
+            <p className="text-sm text-gray-400 leading-relaxed mb-4">{summary}</p>
+          )}
+          {analysis.ai_insights && analysis.ai_insights.length > 0 && (
+            <ul className="space-y-2 border-t border-navy-700 pt-3">
               {analysis.ai_insights.map((insight, i) => (
                 <li key={i} className="flex items-start gap-2.5 text-sm text-gray-400 leading-relaxed">
                   <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-accent-blue shrink-0" />
@@ -494,23 +416,37 @@ function OverviewTab({
                 </li>
               ))}
             </ul>
-          </div>
-        )}
+          )}
+        </div>
+      )}
 
-        {/* Cluster Health Grid */}
-        {analysis.resource_health && analysis.resource_health.length > 0 && (
-          <ClusterHealthGrid resourceHealth={analysis.resource_health} />
-        )}
+      {/* Cluster Health Grid */}
+      {analysis.resource_health && analysis.resource_health.length > 0 && (
+        <ClusterHealthGrid resourceHealth={analysis.resource_health} />
+      )}
 
-        {/* Export to Playbook */}
-        <div className="flex justify-end">
+      {/* Top Findings */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold text-white uppercase tracking-wider">Top Issues</h3>
           <button
             onClick={onOpenPlaybook}
-            className="flex items-center gap-2 px-6 py-3 bg-accent-blue hover:bg-blue-600 text-white font-semibold rounded-xl transition-all shadow-lg shadow-blue-500/20"
+            className="flex items-center gap-2 px-4 py-2 bg-accent-blue hover:bg-blue-600 text-white text-xs font-semibold rounded-lg transition-all"
           >
-            <Zap size={16} />
-            Export to Playbook
+            <Zap size={14} />
+            Export Playbook
           </button>
+        </div>
+        <div className="space-y-3">
+          {issues
+            .sort((a, b) => {
+              const order: Record<string, number> = { critical: 0, warning: 1, info: 2 };
+              return (order[a.severity] ?? 3) - (order[b.severity] ?? 3);
+            })
+            .slice(0, 8)
+            .map((issue) => (
+              <IssueCard key={issue.id} issue={issue} />
+            ))}
         </div>
       </div>
     </div>

@@ -7,11 +7,9 @@ import {
   CheckCircle,
   AlertCircle,
   Clock,
-  Shield,
   Zap,
   ArrowRight,
   Plus,
-  Activity,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import clsx from 'clsx';
@@ -320,7 +318,6 @@ export default function Dashboard() {
               {bundles.map((bundle) => {
                 const cfg = statusConfig[bundle.status] || statusConfig.uploaded;
                 const analysis = (bundle as any).analysis;
-                const issueCount = analysis?.issues?.length ?? 0;
                 const criticalCount = analysis?.issues?.filter((i: any) => i.severity === 'critical' || i.severity === 'error').length ?? 0;
                 const warningCount = analysis?.issues?.filter((i: any) => i.severity === 'warning').length ?? 0;
                 const optimizationCount = analysis?.issues?.filter((i: any) => i.severity === 'info' || i.severity === 'optimization').length ?? 0;

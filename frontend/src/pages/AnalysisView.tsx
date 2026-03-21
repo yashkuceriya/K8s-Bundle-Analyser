@@ -1,27 +1,17 @@
 import { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area, Label } from 'recharts';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import {
   LayoutDashboard,
   AlertTriangle,
   FileText,
   Network,
   Clock,
-  Brain,
   Box,
-  Layers,
   Search,
   Filter,
-  GitBranch,
   MessageCircle,
-  X,
-  ChevronDown,
-  ChevronRight,
   Zap,
-  Shield,
-  TrendingUp,
-  TrendingDown,
-  Activity,
   Loader2,
   RefreshCw,
   HelpCircle,
@@ -39,7 +29,6 @@ import HealthScore from '../components/HealthScore';
 const ClusterMap = lazy(() => import('../components/ClusterMap'));
 import ClusterHealthGrid from '../components/ClusterHealthGrid';
 import LogCorrelationView from '../components/LogCorrelationView';
-import AIInsightsCard from '../components/AIInsightsCard';
 import BundleChat from '../components/BundleChat';
 import ErrorBoundary from '../components/ErrorBoundary';
 import { PlaybookModal } from '../components/PlaybookExport';
@@ -120,38 +109,6 @@ export default function AnalysisView() {
       // silently handle export error
     }
   };
-
-  // Compute namespace info from analysis data
-  const namespaceInfo = useMemo(() => {
-    if (!analysis) return [];
-    const nsMap: Record<string, { podCount: number; issueCount: number }> = {};
-    analysis.log_entries.forEach((l) => {
-      if (l.namespace) {
-        if (!nsMap[l.namespace]) nsMap[l.namespace] = { podCount: 0, issueCount: 0 };
-      }
-    });
-    // Count unique pods per namespace from log entries
-    const podsByNs: Record<string, Set<string>> = {};
-    analysis.log_entries.forEach((l) => {
-      if (l.namespace && l.pod) {
-        if (!podsByNs[l.namespace]) podsByNs[l.namespace] = new Set();
-        podsByNs[l.namespace].add(l.pod);
-      }
-    });
-    // Count issues per namespace
-    analysis.issues.forEach((i) => {
-      if (i.namespace) {
-        if (!nsMap[i.namespace]) nsMap[i.namespace] = { podCount: 0, issueCount: 0 };
-        nsMap[i.namespace].issueCount++;
-      }
-    });
-    Object.entries(podsByNs).forEach(([ns, pods]) => {
-      if (nsMap[ns]) nsMap[ns].podCount = pods.size;
-    });
-    return Object.entries(nsMap)
-      .map(([name, data]) => ({ name, ...data }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [analysis]);
 
   if (loading) {
     return (
@@ -342,51 +299,6 @@ export default function AnalysisView() {
 }
 
 /* ============================================================ */
-/* Sidebar Namespaces Section                                    */
-/* ============================================================ */
-
-function SidebarNamespaces({
-  namespaces,
-}: {
-  namespaces: { name: string; podCount: number; issueCount: number }[];
-}) {
-  const [expanded, setExpanded] = useState(true);
-
-  return (
-    <div>
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500 hover:text-gray-400 transition-colors"
-      >
-        {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        Resources
-      </button>
-      {expanded && (
-        <div className="space-y-0.5 ml-2">
-          {namespaces.map((ns) => (
-            <div
-              key={ns.name}
-              className="flex items-center justify-between px-3 py-1.5 rounded text-xs text-gray-400"
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                <Layers size={12} className="text-gray-500 shrink-0" />
-                <span className="truncate">{ns.name}</span>
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                {ns.issueCount > 0 && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" title={`${ns.issueCount} issues`} />
-                )}
-                <span className="text-[10px] text-gray-500">{ns.podCount}p</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ============================================================ */
 /* Overview Tab                                                  */
 /* ============================================================ */
 
@@ -400,82 +312,6 @@ function OverviewTab({
   onOpenPlaybook: () => void;
 }) {
   const { cluster_health: health, issues, summary } = analysis;
-
-  // Build sorted timeline from issues + raw_events
-  const timelineEntries = useMemo(() => {
-    const entries: {
-      id: string;
-      timestamp: string;
-      severity: string;
-      title: string;
-      description: string;
-    }[] = [];
-
-    // Add issues as timeline entries (use analyzed_at as fallback timestamp)
-    issues.forEach((issue) => {
-      entries.push({
-        id: issue.id,
-        timestamp: analysis.analyzed_at,
-        severity: issue.severity,
-        title: issue.title,
-        description: issue.description,
-      });
-    });
-
-    // Add raw events
-    analysis.raw_events?.forEach((event, idx) => {
-      entries.push({
-        id: `event-${idx}`,
-        timestamp: event.timestamp,
-        severity: event.severity,
-        title: event.type,
-        description: event.message,
-      });
-    });
-
-    // Sort by time descending (most recent first)
-    entries.sort((a, b) => {
-      try {
-        return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
-      } catch {
-        return 0;
-      }
-    });
-
-    return entries.slice(0, 12);
-  }, [issues, analysis.raw_events, analysis.analyzed_at]);
-
-  // Build AI diagnostic cards from issues
-  const diagnosticCards = useMemo(() => {
-    const order: Record<string, number> = { critical: 0, warning: 1, info: 2 };
-    return [...issues]
-      .sort((a, b) => (order[a.severity] ?? 3) - (order[b.severity] ?? 3))
-      .slice(0, 6)
-      .map((issue) => ({
-        id: issue.id,
-        severity: issue.severity,
-        category: issue.category?.toUpperCase() ?? 'UNKNOWN',
-        description: issue.title,
-      }));
-  }, [issues]);
-
-  const [expandedTimelineId, setExpandedTimelineId] = useState<string | null>(null);
-
-  const severityDotColor = (severity: string) => {
-    const s = severity?.toLowerCase();
-    if (s === 'critical' || s === 'error') return 'bg-[#ef4444]';
-    if (s === 'warning' || s === 'warn') return 'bg-[#f59e0b]';
-    if (s === 'info') return 'bg-[#06b6d4]';
-    return 'bg-gray-400';
-  };
-
-  const severityBorderColor = (severity: string) => {
-    const s = severity?.toLowerCase();
-    if (s === 'critical' || s === 'error') return 'border-l-[#ef4444]';
-    if (s === 'warning' || s === 'warn') return 'border-l-[#f59e0b]';
-    if (s === 'info') return 'border-l-[#06b6d4]';
-    return 'border-l-gray-400';
-  };
 
   return (
     <div className="flex gap-6 max-w-screen-2xl">
@@ -639,229 +475,6 @@ function OverviewTab({
           </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-/* ============================================================ */
-/* Analysis Charts                                              */
-/* ============================================================ */
-
-const POD_STATUS_COLORS: Record<string, string> = {
-  Running: '#10b981', Succeeded: '#06b6d4', Pending: '#f59e0b',
-  Failed: '#ef4444', CrashLoopBackOff: '#ef4444', Unknown: '#6b7280',
-  ImagePullBackOff: '#f97316', OOMKilled: '#dc2626', Error: '#ef4444',
-  Evicted: '#9333ea', ContainerCreating: '#3b82f6',
-  Healthy: '#10b981', Critical: '#ef4444', Warning: '#f59e0b',
-  Ready: '#10b981', healthy: '#10b981', critical: '#ef4444', warning: '#f59e0b',
-  running: '#10b981', error: '#ef4444', pending: '#f59e0b', unknown: '#6b7280',
-};
-
-function AnalysisCharts({ analysis }: { analysis: AnalysisResult }) {
-  const { issues, cluster_health: h, log_entries, resource_health } = analysis;
-
-  // Pod status distribution
-  const podStatusData = useMemo(() => {
-    const counts: Record<string, number> = {};
-    (resource_health ?? []).forEach(r => {
-      if ((r.type ?? '').toLowerCase() === 'pod') {
-        const s = (r.status ?? 'Unknown').charAt(0).toUpperCase() + (r.status ?? 'Unknown').slice(1);
-        counts[s] = (counts[s] || 0) + 1;
-      }
-    });
-    return Object.entries(counts).map(([name, value]) => ({ name, value }));
-  }, [resource_health]);
-
-  // Issue severity breakdown
-  const severityData = useMemo(() => [
-    { name: 'Critical', value: h.critical_count, color: '#ef4444' },
-    { name: 'Warning', value: h.warning_count, color: '#f59e0b' },
-    { name: 'Info', value: h.info_count, color: '#06b6d4' },
-  ].filter(d => d.value > 0), [h]);
-
-  // Issue category distribution
-  const categoryData = useMemo(() => {
-    const counts: Record<string, number> = {};
-    issues.forEach(i => { counts[i.category] = (counts[i.category] || 0) + 1; });
-    return Object.entries(counts)
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 6);
-  }, [issues]);
-
-  // Log level distribution
-  const logLevelData = useMemo(() => {
-    const counts: Record<string, number> = { error: 0, warn: 0, info: 0 };
-    (log_entries ?? []).forEach(l => { const lv = (l.level ?? 'info').toLowerCase(); counts[lv] = (counts[lv] || 0) + 1; });
-    return [
-      { name: 'Error', value: counts.error, color: '#ef4444' },
-      { name: 'Warn', value: counts.warn, color: '#f59e0b' },
-      { name: 'Info', value: counts.info, color: '#06b6d4' },
-    ].filter(d => d.value > 0);
-  }, [log_entries]);
-
-  const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ name: string; value: number }> }) => {
-    if (!active || !payload?.length) return null;
-    return (
-      <div className="bg-navy-800 border border-navy-600 rounded-lg px-3 py-2 text-xs shadow-xl">
-        <p className="text-gray-300 font-medium">{payload[0].name}: <span className="text-white">{payload[0].value}</span></p>
-      </div>
-    );
-  };
-
-  return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      {/* Pod Status Distribution */}
-      <div className="bg-navy-800 border border-navy-700 rounded-xl p-4">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-3">Pod Status</p>
-        <div className="h-36">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie data={podStatusData} cx="50%" cy="50%" innerRadius={30} outerRadius={55} paddingAngle={2} dataKey="value" animationDuration={800} animationBegin={100}>
-                {podStatusData.map((entry) => (
-                  <Cell key={entry.name} fill={POD_STATUS_COLORS[entry.name] ?? '#6b7280'} />
-                ))}
-              </Pie>
-              <Tooltip content={<CustomTooltip />} />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 justify-center">
-          {podStatusData.map(d => (
-            <div key={d.name} className="flex items-center gap-1 text-[10px] text-gray-400">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: POD_STATUS_COLORS[d.name] ?? '#6b7280' }} />
-              {d.name} ({d.value})
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Severity Breakdown */}
-      <div className="bg-navy-800 border border-navy-700 rounded-xl p-4">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-3">Issue Severity</p>
-        <div className="h-36">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie data={severityData} cx="50%" cy="50%" innerRadius={30} outerRadius={55} paddingAngle={2} dataKey="value" animationDuration={800} animationBegin={100}>
-                {severityData.map((entry) => (
-                  <Cell key={entry.name} fill={entry.color} />
-                ))}
-              </Pie>
-              <Tooltip content={<CustomTooltip />} />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 justify-center">
-          {severityData.map(d => (
-            <div key={d.name} className="flex items-center gap-1 text-[10px] text-gray-400">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: d.color }} />
-              {d.name} ({d.value})
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Issue Categories Bar Chart */}
-      <div className="bg-navy-800 border border-navy-700 rounded-xl p-4">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-3">Issue Categories</p>
-        <div className="h-40">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={categoryData} layout="vertical" margin={{ left: 0, right: 8, top: 4, bottom: 4 }}>
-              <XAxis type="number" hide />
-              <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: '#9ca3af' }} width={80} />
-              <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="value" fill="#06b6d4" radius={[0, 4, 4, 0]} barSize={12} animationDuration={800} label={{ position: 'right', fill: '#9ca3af', fontSize: 10 }} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* Log Level Distribution */}
-      <div className="bg-navy-800 border border-navy-700 rounded-xl p-4">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-3">Log Levels</p>
-        <div className="h-36">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie data={logLevelData} cx="50%" cy="50%" innerRadius={30} outerRadius={55} paddingAngle={2} dataKey="value" animationDuration={800} animationBegin={100}>
-                {logLevelData.map((entry) => (
-                  <Cell key={entry.name} fill={entry.color} />
-                ))}
-              </Pie>
-              <Tooltip content={<CustomTooltip />} />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 justify-center">
-          {logLevelData.map(d => (
-            <div key={d.name} className="flex items-center gap-1 text-[10px] text-gray-400">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: d.color }} />
-              {d.name} ({d.value})
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function StatCardNew({
-  label,
-  value,
-  color,
-  progress,
-  subtitle,
-  trend,
-  valueLabel,
-  onClick,
-}: {
-  label: string;
-  value: string;
-  color: string;
-  progress: number;
-  subtitle?: string;
-  trend?: 'up' | 'down';
-  valueLabel?: string;
-  onClick?: () => void;
-}) {
-  return (
-    <div
-      className={clsx(
-        "bg-navy-800 border border-navy-700 rounded-xl p-5 transition-all duration-300 hover:border-opacity-60",
-        onClick && "cursor-pointer hover:scale-[1.02]"
-      )}
-      style={{ borderColor: `${color}25`, boxShadow: `0 0 20px ${color}08` }}
-      onClick={onClick}
-    >
-      <div className="flex items-center justify-between mb-1">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{label}</p>
-        {trend && (
-          <span className="flex items-center gap-0.5 text-[10px] font-bold" style={{ color, textShadow: `0 0 8px ${color}80` }}>
-            {trend === 'up' ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
-            {trend === 'up' ? '▲' : '▼'}
-          </span>
-        )}
-      </div>
-      <div className="flex items-baseline gap-1.5 mb-3">
-        <p
-          className="text-4xl font-bold tracking-tight"
-          style={{ color, textShadow: `0 0 20px ${color}40` }}
-        >
-          {value}
-        </p>
-        {valueLabel && <span className="text-xs text-gray-500">{valueLabel}</span>}
-      </div>
-      {/* Progress bar */}
-      <div className="w-full h-1.5 bg-navy-900 rounded-full overflow-hidden mb-2">
-        <div
-          className="h-full rounded-full transition-all duration-1000 ease-out"
-          style={{
-            width: `${Math.min(100, progress)}%`,
-            backgroundColor: color,
-            boxShadow: `0 0 8px ${color}60`,
-          }}
-        />
-      </div>
-      {subtitle && <p className="text-[10px] text-gray-500">{subtitle}</p>}
     </div>
   );
 }

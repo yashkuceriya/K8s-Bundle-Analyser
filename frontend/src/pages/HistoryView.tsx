@@ -1,11 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
-import { History, ArrowRight, GitCompare, ChevronDown, ChevronRight, AlertTriangle, AlertCircle, Info } from 'lucide-react';
+import { History, ArrowRight, GitCompare, ChevronDown, ChevronRight, AlertCircle } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import clsx from 'clsx';
 import Navbar from '../components/Navbar';
-import HealthScore from '../components/HealthScore';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { getBundles, getAnalysis, getAnalysisHistory } from '../api/client';
 import type { BundleInfo, AnalysisResult, AnalysisHistoryEntry } from '../types';

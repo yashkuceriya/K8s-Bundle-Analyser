@@ -4,7 +4,6 @@ import { GitCompare, ArrowLeft, Download, AlertCircle, AlertTriangle, Info, Chec
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import clsx from 'clsx';
 import Navbar from '../components/Navbar';
-import HealthScore from '../components/HealthScore';
 import LoadingSpinner from '../components/LoadingSpinner';
 import SeverityBadge from '../components/SeverityBadge';
 import { compareAnalyses, getBundle } from '../api/client';

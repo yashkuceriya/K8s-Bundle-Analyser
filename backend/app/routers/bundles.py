@@ -64,7 +64,7 @@ class ChatResponse(BaseModel):
     answer: str
     sources: list[str] = []
 
-router = APIRouter(prefix="/api/bundles", tags=["bundles"])
+router = APIRouter(prefix="/api/bundles", tags=["Bundles"])
 
 # In-memory stores
 _bundles: dict[str, BundleInfo] = {}
@@ -264,7 +264,7 @@ async def list_bundles():
     return list(_bundles.values())
 
 
-@router.get("/search/cross-bundle")
+@router.get("/search/cross-bundle", tags=["Search"])
 async def cross_bundle_search(q: str, n: int = 10):
     """Search across all bundles for similar issues/patterns."""
     from app.rag.vector_store import _get_collection
@@ -301,7 +301,7 @@ async def cross_bundle_search(q: str, n: int = 10):
         raise HTTPException(status_code=500, detail=f"Search failed: {e}")
 
 
-@router.get("/{bundle_id}/chunks")
+@router.get("/{bundle_id}/chunks", tags=["Search"])
 async def get_bundle_chunks(bundle_id: str):
     """Get chunk/indexing stats for a bundle."""
     if bundle_id not in _bundles:
@@ -330,7 +330,7 @@ async def get_bundle(bundle_id: str):
     return _bundles[bundle_id]
 
 
-@router.post("/{bundle_id}/analyze", response_model=AnalysisResult)
+@router.post("/{bundle_id}/analyze", response_model=AnalysisResult, tags=["Analysis"])
 async def analyze_bundle(bundle_id: str):
     """Run analysis on an uploaded bundle."""
     if bundle_id not in _bundles:
@@ -515,7 +515,7 @@ async def analyze_bundle(bundle_id: str):
         raise HTTPException(status_code=500, detail=f"Analysis failed: {e}")
 
 
-@router.get("/{bundle_id}/analysis", response_model=AnalysisResult)
+@router.get("/{bundle_id}/analysis", response_model=AnalysisResult, tags=["Analysis"])
 async def get_analysis(bundle_id: str):
     """Get the stored analysis result for a bundle."""
     if bundle_id not in _bundles:
@@ -557,7 +557,7 @@ async def delete_bundle(bundle_id: str):
     return {"detail": "Bundle deleted", "id": bundle_id}
 
 
-@router.post("/{bundle_id}/reanalyze", response_model=AnalysisResult)
+@router.post("/{bundle_id}/reanalyze", response_model=AnalysisResult, tags=["Analysis"])
 async def reanalyze_bundle(bundle_id: str):
     """Re-run analysis on an already uploaded bundle."""
     if bundle_id not in _bundles:
@@ -570,7 +570,7 @@ async def reanalyze_bundle(bundle_id: str):
     return await analyze_bundle(bundle_id)
 
 
-@router.get("/{bundle_id}/export")
+@router.get("/{bundle_id}/export", tags=["Export"])
 async def export_analysis(bundle_id: str):
     """Export the analysis result as a JSON download."""
     if bundle_id not in _bundles:
@@ -591,7 +591,7 @@ async def export_analysis(bundle_id: str):
     )
 
 
-@router.get("/{bundle_id}/preflight")
+@router.get("/{bundle_id}/preflight", tags=["Export"])
 async def get_preflight_spec(bundle_id: str):
     """Generate a Troubleshoot preflight check YAML spec from detected issues."""
     if bundle_id not in _bundles:
@@ -617,7 +617,7 @@ async def get_preflight_spec(bundle_id: str):
     )
 
 
-@router.post("/{bundle_id}/chat", response_model=ChatResponse)
+@router.post("/{bundle_id}/chat", response_model=ChatResponse, tags=["Chat"])
 async def chat_with_bundle(bundle_id: str, body: ChatRequest):
     """Ask a natural-language question about an analyzed bundle."""
     if bundle_id not in _bundles:
@@ -678,7 +678,7 @@ async def chat_with_bundle(bundle_id: str, body: ChatRequest):
     return ChatResponse(answer=answer, sources=sources)
 
 
-@router.get("/{bundle_id}/history")
+@router.get("/{bundle_id}/history", tags=["History"])
 async def get_analysis_history(bundle_id: str):
     """List all historical analysis runs for a bundle."""
     if bundle_id not in _bundles:
@@ -718,7 +718,7 @@ async def get_analysis_history(bundle_id: str):
     return entries
 
 
-@router.get("/{bundle_id}/history/{timestamp}")
+@router.get("/{bundle_id}/history/{timestamp}", tags=["History"])
 async def get_historical_analysis(bundle_id: str, timestamp: str):
     """Get a specific historical analysis result."""
     if bundle_id not in _bundles:
@@ -737,7 +737,7 @@ async def get_historical_analysis(bundle_id: str, timestamp: str):
         raise HTTPException(status_code=500, detail=f"Failed to load analysis: {e}")
 
 
-@router.post("/compare", response_model=CompareResponse)
+@router.post("/compare", response_model=CompareResponse, tags=["History"])
 async def compare_analyses(body: CompareRequest):
     """Compare two bundle analyses side by side."""
     def _load_analysis(bundle_id: str, timestamp: str | None) -> AnalysisResult:

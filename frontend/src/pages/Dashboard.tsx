@@ -10,11 +10,15 @@ import {
   Shield,
   Zap,
   ArrowRight,
+  Plus,
+  Activity,
+  Bell,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import clsx from 'clsx';
 import Navbar from '../components/Navbar';
 import LoadingSpinner from '../components/LoadingSpinner';
+import HealthScore from '../components/HealthScore';
 import { uploadBundle, getBundles, analyzeBundle, deleteBundle } from '../api/client';
 import type { BundleInfo } from '../types';
 
@@ -137,80 +141,116 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-navy-900">
       <Navbar />
-      <main className="max-w-screen-lg mx-auto px-6 py-12 space-y-10">
+      <main className="px-8 py-8 max-w-screen-2xl mx-auto space-y-8">
 
-        {/* Hero Section */}
-        <div className="text-center space-y-4 py-4">
-          <div className="flex items-center justify-center gap-3 mb-2">
-            <div className="w-12 h-12 bg-gradient-to-br from-[#06b6d4]/20 to-[#8b5cf6]/20 rounded-2xl flex items-center justify-center border border-navy-600">
-              <Shield size={24} className="text-[#06b6d4]" />
-            </div>
-          </div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">
-            K8s Bundle Analyzer
-          </h1>
-          <p className="text-gray-400 max-w-lg mx-auto text-sm leading-relaxed">
-            Automated Kubernetes troubleshooting for{' '}
-            <span className="text-[#06b6d4]">Troubleshoot.sh</span> support bundles.
-            Upload a bundle to run AI-powered root-cause analysis in seconds.
-          </p>
-        </div>
-
-        {/* Upload Zone */}
-        <div
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={onDrop}
-          onClick={() => fileInputRef.current?.click()}
-          className={clsx(
-            'relative border-2 border-dashed rounded-2xl p-14 text-center cursor-pointer transition-all duration-300',
-            dragOver
-              ? 'border-[#06b6d4] bg-[#06b6d4]/5 shadow-[0_0_40px_rgba(6,182,212,0.15)]'
-              : 'border-navy-600 hover:border-navy-500 bg-navy-800/30 hover:bg-navy-800/50 hover:shadow-[0_0_30px_rgba(6,182,212,0.06)]'
-          )}
-        >
-          <input
-            ref={fileInputRef}
-            type="file"
-            onChange={onFileChange}
-            accept=".tar.gz,.tgz,.gz,application/gzip,application/x-gzip,application/x-compressed-tar"
-            aria-label="Upload support bundle file"
-            className="hidden"
-          />
-          {uploading ? (
-            <LoadingSpinner size={40} label="Uploading bundle..." />
-          ) : analyzing ? (
-            <LoadingSpinner size={40} label="Analyzing bundle..." />
-          ) : (
-            <div className="flex flex-col items-center gap-4">
-              <div className="w-20 h-20 bg-navy-700/50 rounded-2xl flex items-center justify-center border border-navy-600">
-                <Upload size={32} className="text-[#06b6d4]" />
+        {/* Top 3-column section */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Hero */}
+          <div className="space-y-4">
+            <h1 className="text-4xl font-bold text-white leading-tight">
+              System Health<br />Portal
+            </h1>
+            <p className="text-sm text-gray-400 leading-relaxed max-w-sm">
+              Upload cluster diagnostic bundles for instant analysis, pattern matching, and health scoring.
+            </p>
+            <div className="flex items-center gap-8 pt-2">
+              <div>
+                <p className="text-2xl font-bold text-white">{bundles.length > 0 ? `${bundles.length}` : '0'}</p>
+                <p className="text-[10px] text-gray-500 uppercase tracking-wider">Bundles Analyzed</p>
               </div>
               <div>
-                <p className="text-lg font-medium text-gray-200">
-                  Drag and drop your <span className="text-[#06b6d4]">.tar.gz</span> support bundle
-                </p>
-                <p className="text-sm text-gray-500 mt-1">
-                  Your bundle will be analyzed using our AI-powered engine to detect
-                  pod failures, node pressures, and network issues.
-                </p>
+                <p className="text-2xl font-bold text-white">{bundles.filter(b => b.status === 'completed').length}</p>
+                <p className="text-[10px] text-gray-500 uppercase tracking-wider">Completed</p>
               </div>
-              <button
-                onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
-                className="mt-2 px-6 py-2.5 bg-[#06b6d4] hover:bg-cyan-600 text-white text-sm font-semibold rounded-xl transition-all duration-200 shadow-lg shadow-cyan-500/20"
-              >
-                Browse Files
-              </button>
             </div>
-          )}
+          </div>
+
+          {/* Upload Zone */}
+          <div
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={onDrop}
+            onClick={() => fileInputRef.current?.click()}
+            className={clsx(
+              'border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center gap-4 cursor-pointer transition-all',
+              dragOver
+                ? 'border-accent-blue bg-accent-blue/5'
+                : 'border-navy-600 hover:border-navy-500 bg-navy-800/30'
+            )}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              onChange={onFileChange}
+              accept=".tar.gz,.tgz,.gz,application/gzip,application/x-gzip,application/x-compressed-tar"
+              aria-label="Upload support bundle file"
+              className="hidden"
+            />
+            {uploading ? (
+              <LoadingSpinner size={32} label="Uploading..." />
+            ) : (
+              <>
+                <div className="w-14 h-14 bg-navy-700 rounded-2xl flex items-center justify-center border border-navy-600">
+                  <Upload size={24} className="text-accent-blue" />
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-gray-300">
+                    Drag and drop <span className="text-accent-blue">.tar.gz</span> bundle
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Supports Kubernetes diagnostic bundles up to 500MB
+                  </p>
+                </div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
+                  className="px-5 py-2 bg-accent-blue hover:bg-blue-600 text-white text-sm font-semibold rounded-xl transition-colors shadow-lg shadow-blue-500/20"
+                >
+                  Select Bundle
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* System Feed */}
+          <div className="bg-navy-800 border border-navy-700 rounded-xl p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Bell size={14} className="text-gray-500" />
+              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">System Feed</h3>
+            </div>
+            <div className="space-y-3">
+              {bundles.slice(0, 4).map((b) => (
+                <div key={b.id} className="flex items-start gap-3 p-2 rounded-lg hover:bg-navy-700/50 transition-colors">
+                  <div className={clsx(
+                    'w-2 h-2 rounded-full mt-1.5 shrink-0',
+                    b.status === 'completed' ? 'bg-accent-green' :
+                    b.status === 'analyzing' ? 'bg-accent-yellow animate-pulse' :
+                    b.status === 'failed' ? 'bg-red-400' :
+                    'bg-gray-500'
+                  )} />
+                  <div className="min-w-0">
+                    <p className="text-sm text-gray-200 font-medium truncate">
+                      {b.status === 'completed' ? 'Analysis Complete' :
+                       b.status === 'analyzing' ? 'Analyzing Bundle...' :
+                       b.status === 'failed' ? 'Analysis Failed' :
+                       'Upload Received'}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate">{b.filename}</p>
+                  </div>
+                </div>
+              ))}
+              {bundles.length === 0 && (
+                <p className="text-xs text-gray-600 text-center py-4">No recent activity</p>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Uploaded bundle action bar */}
         {uploadedBundle && !analyzing && (
-          <div className="flex items-center justify-between bg-navy-800 border border-navy-600 rounded-xl p-4 shadow-lg">
+          <div className="flex items-center justify-between bg-navy-800 border border-accent-blue/30 rounded-xl p-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-[#06b6d4]/10 rounded-lg flex items-center justify-center">
-                <FileArchive size={20} className="text-[#06b6d4]" />
+              <div className="w-10 h-10 bg-accent-blue/10 rounded-lg flex items-center justify-center">
+                <FileArchive size={20} className="text-accent-blue" />
               </div>
               <div>
                 <span className="text-sm text-gray-200 font-medium">{uploadedBundle.filename}</span>
@@ -219,7 +259,7 @@ export default function Dashboard() {
             </div>
             <button
               onClick={() => handleAnalyze(uploadedBundle.id)}
-              className="flex items-center gap-2 px-5 py-2.5 bg-[#06b6d4] hover:bg-cyan-600 text-white text-sm font-semibold rounded-xl transition-all duration-200 shadow-lg shadow-cyan-500/20"
+              className="flex items-center gap-2 px-5 py-2.5 bg-accent-blue hover:bg-blue-600 text-white text-sm font-semibold rounded-xl transition-all duration-200 shadow-lg shadow-blue-500/20"
             >
               <Zap size={16} />
               Analyze Bundle
@@ -234,50 +274,37 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Feature highlights */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {[
-            {
-              icon: <Zap size={18} className="text-[#06b6d4]" />,
-              title: 'Heuristic Detection',
-              desc: '15+ pattern detectors for common K8s failures',
-            },
-            {
-              icon: <Shield size={18} className="text-[#8b5cf6]" />,
-              title: 'AI Root-Cause Analysis',
-              desc: 'Correlates symptoms into causal chains',
-            },
-            {
-              icon: <FileArchive size={18} className="text-[#10b981]" />,
-              title: 'Actionable Output',
-              desc: 'Playbooks, preflight checks, and reports',
-            },
-          ].map((f) => (
-            <div key={f.title} className="bg-navy-800/50 border border-navy-700 rounded-xl p-4 flex items-start gap-3">
-              <div className="w-9 h-9 bg-navy-700 rounded-lg flex items-center justify-center shrink-0">
-                {f.icon}
+        {/* Currently Analyzing */}
+        {analyzing && (
+          <div className="bg-navy-800 border border-navy-700 rounded-xl p-5">
+            <div className="flex items-center gap-3 mb-3">
+              <span className="w-2 h-2 rounded-full bg-accent-blue animate-pulse" />
+              <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Currently Analyzing</span>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-navy-700 rounded-xl flex items-center justify-center">
+                <div className="w-6 h-6 border-2 border-accent-blue border-t-transparent rounded-full animate-spin" />
               </div>
-              <div>
-                <p className="text-sm font-medium text-gray-200">{f.title}</p>
-                <p className="text-xs text-gray-500 mt-0.5">{f.desc}</p>
+              <div className="flex-1 space-y-2">
+                <div className="h-3 bg-navy-700 rounded-full w-3/4 animate-pulse" />
+                <div className="h-2 bg-navy-700 rounded-full w-1/2 animate-pulse" />
               </div>
             </div>
-          ))}
-        </div>
+          </div>
+        )}
 
-        {/* Recent Analysis */}
+        {/* Recent History */}
         <section>
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-base font-semibold text-white">Recent Analysis</h2>
+            <h2 className="text-lg font-semibold text-white">Recent History</h2>
             {bundles.length > 0 && (
-              <span className="text-xs text-gray-500">{bundles.length} bundle{bundles.length !== 1 ? 's' : ''}</span>
+              <Link
+                to="/history"
+                className="text-xs text-accent-blue hover:text-blue-400 font-medium transition-colors"
+              >
+                View All →
+              </Link>
             )}
-            <Link
-              to="/history"
-              className="text-xs text-[#8b5cf6] hover:text-violet-400 font-medium transition-colors"
-            >
-              View History →
-            </Link>
           </div>
           {loading ? (
             <LoadingSpinner size={32} label="Loading bundles..." className="py-12" />
@@ -288,55 +315,105 @@ export default function Dashboard() {
               <p className="text-xs text-gray-600 mt-1">Upload a support bundle above to get started</p>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {bundles.map((bundle) => {
                 const cfg = statusConfig[bundle.status] || statusConfig.uploaded;
+                const analysis = (bundle as any).analysis;
+                const issueCount = analysis?.issues?.length ?? 0;
+                const criticalCount = analysis?.issues?.filter((i: any) => i.severity === 'critical' || i.severity === 'error').length ?? 0;
+                const warningCount = analysis?.issues?.filter((i: any) => i.severity === 'warning').length ?? 0;
+                const optimizationCount = analysis?.issues?.filter((i: any) => i.severity === 'info' || i.severity === 'optimization').length ?? 0;
+                const healthScore = analysis?.health_score ?? null;
+
                 return (
                   <div
                     key={bundle.id}
-                    className="bg-navy-800 border border-navy-700 rounded-xl p-4 flex items-center justify-between hover:border-navy-600 transition-colors group"
+                    onClick={() => bundle.status === 'completed' ? navigate(`/analysis/${bundle.id}`) : undefined}
+                    className={clsx(
+                      'bg-navy-800 border border-navy-700 rounded-xl p-5 transition-all hover:border-navy-600 group',
+                      bundle.status === 'completed' && 'cursor-pointer hover:shadow-lg hover:shadow-navy-900/50'
+                    )}
                   >
-                    <div className="flex items-center gap-4 min-w-0">
-                      <div className="w-10 h-10 bg-navy-700 rounded-lg flex items-center justify-center shrink-0">
-                        <FileArchive size={18} className="text-gray-500" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-gray-200 truncate">{bundle.filename}</p>
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="min-w-0 flex-1 mr-3">
+                        <p className="text-sm font-semibold text-gray-200 truncate">{bundle.filename}</p>
                         <p className="text-xs text-gray-500 mt-0.5">
                           {(() => {
-                            try { return format(new Date(bundle.upload_time), 'MMM d, yyyy HH:mm'); }
+                            try { return `Uploaded ${format(new Date(bundle.upload_time), 'MMM d, HH:mm')}`; }
                             catch { return bundle.upload_time; }
                           })()}
                         </p>
                       </div>
-                      <span className={clsx('inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium shrink-0', cfg.bg, cfg.color)}>
-                        <span className={clsx('w-1.5 h-1.5 rounded-full', cfg.dot)} />
-                        {bundle.status.charAt(0).toUpperCase() + bundle.status.slice(1)}
+                      <span className={clsx(
+                        'px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider shrink-0',
+                        cfg.bg, cfg.color
+                      )}>
+                        {bundle.status}
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      {bundle.status === 'completed' && (
-                        <button
-                          onClick={() => navigate(`/analysis/${bundle.id}`)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#06b6d4]/10 text-[#06b6d4] text-xs font-medium rounded-lg hover:bg-[#06b6d4]/20 transition-colors"
-                        >
-                          View Results
-                          <ArrowRight size={12} />
-                        </button>
-                      )}
+                    {/* Progress bar for analyzing bundles */}
+                    {bundle.status === 'analyzing' && (
+                      <div className="mb-4">
+                        <div className="w-full h-1.5 bg-navy-700 rounded-full overflow-hidden">
+                          <div className="h-full bg-accent-blue rounded-full animate-pulse" style={{ width: '60%' }} />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Score + Stats */}
+                    <div className="flex items-center justify-between">
+                      <div className="shrink-0">
+                        {healthScore !== null ? (
+                          <HealthScore score={healthScore} size={64} />
+                        ) : (
+                          <div className="w-16 h-16 rounded-full border-4 border-navy-700 flex items-center justify-center">
+                            <span className="text-xs text-gray-500">--</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex gap-4 text-xs">
+                        <div className="text-center">
+                          <p className="text-red-400 font-semibold">{bundle.status === 'completed' ? criticalCount : '--'}</p>
+                          <p className="text-gray-500 text-[10px]">Critical</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-amber-400 font-semibold">{bundle.status === 'completed' ? warningCount : '--'}</p>
+                          <p className="text-gray-500 text-[10px]">Warnings</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-accent-blue font-semibold">{bundle.status === 'completed' ? optimizationCount : '--'}</p>
+                          <p className="text-gray-500 text-[10px]">Optimizations</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center justify-between mt-4 pt-3 border-t border-navy-700">
                       {bundle.status === 'uploaded' && (
                         <button
-                          onClick={() => handleAnalyze(bundle.id)}
+                          onClick={(e) => { e.stopPropagation(); handleAnalyze(bundle.id); }}
                           disabled={analyzing === bundle.id}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#06b6d4]/10 text-[#06b6d4] text-xs font-medium rounded-lg hover:bg-[#06b6d4]/20 transition-colors disabled:opacity-50"
+                          className="text-xs text-accent-blue hover:text-blue-400 font-medium disabled:opacity-50"
                         >
-                          {analyzing === bundle.id ? <LoadingSpinner size={14} /> : 'Analyze'}
+                          {analyzing === bundle.id ? 'Analyzing...' : 'Analyze'}
                         </button>
                       )}
+                      {bundle.status === 'completed' && (
+                        <span className="text-xs text-accent-blue font-medium flex items-center gap-1">
+                          View Results <ArrowRight size={12} />
+                        </span>
+                      )}
+                      {bundle.status === 'analyzing' && (
+                        <span className="text-xs text-gray-500 font-medium">Processing...</span>
+                      )}
+                      {bundle.status === 'failed' && (
+                        <span className="text-xs text-red-400 font-medium">Failed</span>
+                      )}
                       <button
-                        onClick={() => handleDelete(bundle.id)}
-                        className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                        onClick={(e) => { e.stopPropagation(); handleDelete(bundle.id); }}
+                        className="p-1.5 text-gray-600 hover:text-red-400 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
                         aria-label="Delete bundle"
                       >
                         <Trash2 size={14} />
@@ -345,21 +422,21 @@ export default function Dashboard() {
                   </div>
                 );
               })}
+
+              {/* Upload New Card */}
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                className="bg-navy-800/30 border-2 border-dashed border-navy-700 rounded-xl p-5 flex flex-col items-center justify-center gap-3 cursor-pointer hover:border-navy-600 hover:bg-navy-800/50 transition-all min-h-[200px]"
+              >
+                <div className="w-12 h-12 bg-navy-700 rounded-xl flex items-center justify-center border border-navy-600">
+                  <Plus size={24} className="text-gray-500" />
+                </div>
+                <p className="text-sm text-gray-400 font-medium">Upload New Cluster Data</p>
+              </div>
             </div>
           )}
         </section>
       </main>
-
-      {/* Footer */}
-      <footer className="border-t border-navy-800 py-4 text-center">
-        <p className="text-xs text-gray-600">
-          K8s Bundle Analyzer v1.0 &middot; Built for{' '}
-          <a href="https://troubleshoot.sh" target="_blank" rel="noopener noreferrer" className="text-gray-500 hover:text-gray-400 transition-colors">
-            Troubleshoot.sh
-          </a>{' '}
-          bundles &middot; 15 heuristic detectors + Claude AI
-        </p>
-      </footer>
     </div>
   );
 }

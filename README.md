@@ -18,6 +18,7 @@ K8s Bundle Analyzer is a web-based tool that ingests support bundles from `kubec
   - Certificate expiration, DNS failures, connection errors
   - Deprecated API usage, failed events
 - **AI Root-Cause Analysis** -- Feeds heuristic findings and cluster state to Claude, which correlates symptoms across components and identifies causal chains. Separates root causes from downstream effects.
+- **RAG Pipeline** -- OpenAI embeddings with ChromaDB vector store. Bundle content is chunked and indexed for semantic retrieval, powering evidence-grounded chat responses with cited sources.
 - **Health Score with Trend** -- Aggregated cluster health score with severity-weighted issue prioritization. Tracks score across analysis runs to show improvement or degradation over time.
 
 ### Interactive Tools
@@ -26,6 +27,7 @@ K8s Bundle Analyzer is a web-based tool that ingests support bundles from `kubec
 - **3D Cluster Topology Map** -- Three.js visualization of pod/service/node relationships with health status overlay. Supports search, fullscreen mode, and label toggling.
 - **Log Correlation** -- Cross-source log analysis that links events across pods, nodes, and system components. Sparkline visualizations show event density over time.
 - **Cluster Health Grid** -- Interactive dot-grid view of resource health states. Click into any resource for details.
+- **Cross-Bundle Search** -- Semantic search across all indexed bundles using vector similarity. Find similar issues and patterns across your support bundle history.
 
 ### Actionable Output
 
@@ -50,7 +52,7 @@ Security and input validation are enforced at every layer through a shared `guar
 | **AI output validation** | Severity values are clamped to `critical/warning/info`. Categories are restricted to a fixed allowlist. HTML tags are stripped. All fields are truncated to prevent payload inflation. |
 | **XSS protection** | DOMPurify with an explicit tag allowlist sanitizes all AI-generated content before rendering in the browser. |
 | **System prompt persona lock** | The AI system prompt enforces a Kubernetes diagnostics persona. Off-topic and explicit content is rejected before the API call. |
-| **Air-gap safe** | The entire heuristic pipeline, cluster map, log correlation, and UI run with zero external calls. The `ANTHROPIC_API_KEY` is optional. |
+| **Air-gap safe** | The entire heuristic pipeline, cluster map, log correlation, and UI run with zero external calls. The `OPENROUTER_API_KEY` is optional. |
 
 ## Quick Start
 
@@ -60,7 +62,7 @@ Security and input validation are enforced at every layer through a shared `guar
 git clone <repo-url> && cd k8s-bundle-analyzer
 
 # Optional: enable AI-powered analysis
-export ANTHROPIC_API_KEY=sk-ant-...
+export OPENROUTER_API_KEY=sk-or-...
 
 docker compose up --build
 ```
@@ -69,16 +71,28 @@ Open http://localhost:5174
 
 ### Option 2: Local Development
 
+Copy the environment template and fill in your keys:
+
+```bash
+cp backend/.env.example backend/.env
+```
+
+**Using Make** (recommended):
+
+```bash
+make dev        # Start backend + frontend
+make test       # Run all tests
+make lint       # Run all linters
+```
+
+**Manual setup:**
+
 **Backend** (Python 3.12+):
 
 ```bash
 cd backend
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-
-# Optional: enable AI analysis
-export ANTHROPIC_API_KEY=sk-ant-...
-
 uvicorn app.main:app --reload --port 8001
 ```
 
@@ -92,7 +106,7 @@ npm run dev
 
 Open http://localhost:5174
 
-> **Note:** The ANTHROPIC_API_KEY is optional. Without it, the tool runs heuristic analysis only -- still useful for the 80% of common failure patterns. AI features (root-cause correlation, chat, preflight generation) activate when the key is present.
+> **Note:** API keys are optional. Without them, the tool runs heuristic analysis only -- still useful for the 80% of common failure patterns. AI features (root-cause correlation, chat, preflight generation) activate when OPENROUTER_API_KEY is present. RAG-powered search requires OPENAI_API_KEY.
 
 ## Usage
 
@@ -144,9 +158,9 @@ Open http://localhost:5174
 
 ## Testing
 
-The project has 81+ tests across backend and frontend.
+The project has 109 tests across backend and frontend.
 
-**Backend** -- 60 tests via pytest:
+**Backend** -- 88 tests via pytest:
 
 - Heuristic detector coverage (all 15 detectors)
 - Guardrails: injection detection, severity/category validation, HTML stripping, truncation
@@ -209,8 +223,8 @@ The generated `.tar.gz` file can be uploaded directly to the analyzer. See `samp
 | Frontend | React 18, TypeScript, Tailwind CSS, Recharts            |
 | 3D       | Three.js (raw WebGL, OrbitControls)                     |
 | Security | DOMPurify (XSS), shared guardrails module               |
-| Backend  | Python 3.12, FastAPI, Pydantic                          |
-| AI       | Claude Sonnet (Anthropic API)                           |
+| Backend  | Python 3.12, FastAPI, Pydantic, PostgreSQL, SQLAlchemy   |
+| AI       | Claude via OpenRouter, OpenAI Embeddings, ChromaDB       |
 | Testing  | pytest (backend), vitest (frontend)                     |
 | Infra    | Docker, Docker Compose, Nginx                           |
 
@@ -232,8 +246,13 @@ The generated `.tar.gz` file can be uploaded directly to the analyzer. See `samp
 │   │       ├── log_correlator.py    # Cross-source log correlation
 │   │       ├── preflight_generator.py  # Preflight check generation
 │   │       └── guardrails.py        # Shared input sanitization + output validation
-│   ├── tests/                       # pytest suite (60 tests)
+│   │   ├── rag/
+│   │   │   ├── chunker.py            # Bundle content chunking for RAG
+│   │   │   ├── retriever.py          # Vector similarity retrieval
+│   │   │   └── vector_store.py       # ChromaDB integration
+│   ├── tests/                       # pytest suite (88 tests)
 │   ├── requirements.txt
+│   ├── pyproject.toml            # Ruff linting + pytest config
 │   └── Dockerfile
 ├── frontend/
 │   ├── src/
@@ -261,6 +280,7 @@ The generated `.tar.gz` file can be uploaded directly to the analyzer. See `samp
 ├── sample-specs/                     # Troubleshoot bundle spec for test generation
 ├── ARCHITECTURE.md                   # Detailed architecture documentation
 ├── docker-compose.yml
+├── Makefile                         # Developer workflow commands
 └── MY_APPROACH_AND_THOUGHTS.md
 ```
 

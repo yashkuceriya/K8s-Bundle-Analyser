@@ -22,6 +22,9 @@ import {
   TrendingUp,
   TrendingDown,
   Activity,
+  Loader2,
+  RefreshCw,
+  HelpCircle,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import clsx from 'clsx';
@@ -40,22 +43,14 @@ import PreflightViewer from '../components/PreflightViewer';
 import { getAnalysis, getBundle, reanalyzeBundle, exportReport, getAnalysisHistory } from '../api/client';
 import type { AnalysisResult, BundleInfo, Issue, LogEntry, TimelineEvent, AnalysisHistoryEntry } from '../types';
 
-type Tab = 'overview' | 'issues' | 'log-correlation' | 'logs' | 'cluster-map' | 'timeline';
+type Tab = 'overview' | 'issues' | 'cluster-map' | 'logs' | 'chat' | 'log-correlation' | 'timeline';
 
-interface TabDef {
-  id: Tab;
-  label: string;
-  icon: React.ReactNode;
-  section: 'analysis' | 'data';
-}
-
-const tabs: TabDef[] = [
-  { id: 'overview', label: 'Dashboard', icon: <LayoutDashboard size={18} />, section: 'analysis' },
-  { id: 'issues', label: 'Detailed Findings', icon: <AlertTriangle size={18} />, section: 'analysis' },
-  { id: 'log-correlation', label: 'Log Correlation', icon: <GitBranch size={18} />, section: 'analysis' },
-  { id: 'logs', label: 'Log Viewer', icon: <FileText size={18} />, section: 'data' },
-  { id: 'cluster-map', label: 'Cluster Map', icon: <Network size={18} />, section: 'data' },
-  { id: 'timeline', label: 'Timeline', icon: <Clock size={18} />, section: 'data' },
+const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
+  { id: 'overview', label: 'Overview', icon: <LayoutDashboard size={18} /> },
+  { id: 'issues', label: 'Issues', icon: <AlertTriangle size={18} /> },
+  { id: 'cluster-map', label: 'Cluster Map', icon: <Network size={18} /> },
+  { id: 'logs', label: 'Logs', icon: <FileText size={18} /> },
+  { id: 'chat', label: 'Chat', icon: <MessageCircle size={18} /> },
 ];
 
 export default function AnalysisView() {
@@ -66,7 +61,6 @@ export default function AnalysisView() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [isReanalyzing, setIsReanalyzing] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
   const [playbookOpen, setPlaybookOpen] = useState(false);
   const [preflightOpen, setPreflightOpen] = useState(false);
   const [historyData, setHistoryData] = useState<AnalysisHistoryEntry[]>([]);
@@ -184,10 +178,6 @@ export default function AnalysisView() {
     );
   }
 
-  const analysisTabs = tabs.filter((t) => t.section === 'analysis');
-  const dataTabs = tabs.filter((t) => t.section === 'data');
-  const shortBundleId = bundleId ? bundleId.slice(0, 8) : '';
-
   return (
     <div className="min-h-screen bg-navy-900 flex flex-col">
       <Navbar
@@ -200,39 +190,35 @@ export default function AnalysisView() {
         isReanalyzing={isReanalyzing}
       />
 
-      {/* Bundle ID Header Bar */}
-      <div className="bg-navy-800 border-b border-navy-600 px-6 py-2.5 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Shield size={16} className="text-[#06b6d4]" />
-          <span className="text-sm font-medium text-gray-200">
-            Bundle ID: <span className="font-mono text-[#06b6d4]">#{shortBundleId}</span>
-          </span>
-          <span className="px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-            Analyzed
-          </span>
-          <span className="px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider bg-[#06b6d4]/15 text-[#06b6d4] border border-[#06b6d4]/30">
-            Troubleshoot.sh
-          </span>
-        </div>
-        <span className="text-xs text-gray-500">
-          {analysis.analyzed_at ? (() => { try { return format(new Date(analysis.analyzed_at), 'MMM d, yyyy HH:mm:ss'); } catch { return analysis.analyzed_at; } })() : ''}
-        </span>
-      </div>
-
       <div className="flex flex-1">
-        {/* Sidebar */}
-        <aside className="w-56 shrink-0 bg-navy-800 border-r border-navy-600 min-h-[calc(100vh-6.5rem)] p-3 flex flex-col">
-          <p className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500">Analysis</p>
-          <div className="space-y-1 mb-4">
-            {analysisTabs.map((tab) => (
+        {/* Left Sidebar */}
+        <aside className="w-60 shrink-0 bg-navy-800 border-r border-navy-700 flex flex-col">
+          {/* Bundle Info */}
+          <div className="p-5 border-b border-navy-700">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-9 h-9 bg-accent-blue/20 rounded-lg flex items-center justify-center">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-accent-blue">
+                  <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                  <path d="M2 17l10 5 10-5" />
+                  <path d="M2 12l10 5 10-5" />
+                </svg>
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-white truncate">{bundle?.filename || 'Bundle'}</p>
+                <p className="text-[10px] text-gray-500 uppercase tracking-wider">Health Score: {analysis.cluster_health.score}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Navigation */}
+          <div className="flex-1 p-3 space-y-1">
+            {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={clsx(
-                  'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                  activeTab === tab.id
-                    ? 'bg-[#06b6d4]/10 text-[#06b6d4]'
-                    : 'text-gray-400 hover:bg-navy-700 hover:text-gray-300'
+                  'sidebar-item w-full',
+                  activeTab === tab.id ? 'sidebar-item-active' : 'sidebar-item-inactive'
                 )}
               >
                 {tab.icon}
@@ -241,140 +227,108 @@ export default function AnalysisView() {
             ))}
           </div>
 
-          <div className="mx-3 border-t border-navy-600 mb-3" />
-          <p className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500">Data</p>
-          <div className="space-y-1">
-            {dataTabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={clsx(
-                  'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                  activeTab === tab.id
-                    ? 'bg-[#06b6d4]/10 text-[#06b6d4]'
-                    : 'text-gray-400 hover:bg-navy-700 hover:text-gray-300'
-                )}
-              >
-                {tab.icon}
-                {tab.label}
-              </button>
-            ))}
-          </div>
+          {/* Re-analyze Button */}
+          <div className="p-3 space-y-3">
+            <button
+              onClick={handleReanalyze}
+              disabled={isReanalyzing}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-accent-blue hover:bg-blue-600 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
+            >
+              {isReanalyzing ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+              Re-analyze Bundle
+            </button>
 
-          {/* Namespace Resources Section */}
-          {namespaceInfo.length > 0 && (
-            <>
-              <div className="mx-3 border-t border-navy-600 my-3" />
-              <SidebarNamespaces namespaces={namespaceInfo} />
-            </>
-          )}
+            <div className="border-t border-navy-700 pt-3 space-y-1">
+              <button className="sidebar-item sidebar-item-inactive w-full">
+                <FileText size={18} />
+                Docs
+              </button>
+              <button className="sidebar-item sidebar-item-inactive w-full">
+                <HelpCircle size={18} />
+                Support
+              </button>
+            </div>
+          </div>
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 p-6 overflow-auto">
-          {activeTab === 'overview' && (
-            <OverviewTab analysis={analysis} historyData={historyData} onOpenPlaybook={() => setPlaybookOpen(true)} />
-          )}
-          {activeTab === 'issues' && <IssuesTab issues={analysis.issues} />}
-          {activeTab === 'log-correlation' && (
-            <ErrorBoundary fallback={
-              <div className="bg-navy-800 border border-navy-600 rounded-xl p-8 text-center">
-                <p className="text-sm text-gray-400">Log correlation failed to load</p>
-                <p className="text-xs text-gray-600 mt-1">Try switching tabs or reloading the page</p>
-              </div>
-            }>
-              <LogCorrelationView correlations={analysis.correlations ?? []} />
-            </ErrorBoundary>
-          )}
-          {activeTab === 'logs' && <LogViewerTab logs={analysis.log_entries} />}
-          {activeTab === 'cluster-map' && (
-            <div className="space-y-6">
-              <ClusterHealthGrid resourceHealth={analysis.resource_health ?? []} />
-              <ErrorBoundary fallback={
-                <div className="flex items-center justify-center h-[600px] bg-navy-800 rounded-xl border border-navy-600">
-                  <div className="text-center space-y-3">
-                    <p className="text-sm text-gray-400">3D visualization unavailable</p>
-                    <p className="text-xs text-gray-600">WebGL may not be supported in this browser</p>
-                  </div>
-                </div>
-              }>
-                <Suspense fallback={
-                  <div className="flex items-center justify-center h-[600px] bg-navy-800 rounded-xl border border-navy-600">
-                    <div className="text-center space-y-3">
-                      <div className="w-8 h-8 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin mx-auto" />
-                      <p className="text-sm text-gray-500">Loading 3D topology...</p>
-                    </div>
-                  </div>
-                }>
-                  <ClusterMap nodes={analysis.topology_nodes} edges={analysis.topology_edges} />
-                </Suspense>
+        <div className="flex-1 flex flex-col min-w-0">
+          {/* Top Tab Bar */}
+          <div className="bg-navy-800 border-b border-navy-700 px-6 flex items-center justify-between">
+            <div className="flex items-center gap-0">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={clsx(
+                    'px-5 py-3.5 text-sm font-medium border-b-2 transition-colors',
+                    activeTab === tab.id
+                      ? 'text-white border-accent-blue'
+                      : 'text-gray-400 border-transparent hover:text-gray-200'
+                  )}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPlaybookOpen(true)}
+                className="px-3 py-1.5 text-xs font-medium text-gray-300 bg-navy-700 hover:bg-navy-600 rounded-lg transition-colors"
+              >
+                Export PDF
+              </button>
+              <button
+                onClick={handleExport}
+                className="px-3 py-1.5 text-xs font-medium text-white bg-navy-700 hover:bg-navy-600 border border-navy-600 rounded-lg transition-colors"
+              >
+                Share Report
+              </button>
+            </div>
+          </div>
+
+          {/* Tab Content */}
+          <main className="flex-1 p-6 overflow-auto">
+            {activeTab === 'overview' && (
+              <OverviewTab analysis={analysis} historyData={historyData} onOpenPlaybook={() => setPlaybookOpen(true)} />
+            )}
+            {activeTab === 'issues' && <IssuesTab issues={analysis.issues} />}
+            {activeTab === 'log-correlation' && (
+              <ErrorBoundary fallback={<div className="bg-navy-800 border border-navy-600 rounded-xl p-8 text-center"><p className="text-sm text-gray-400">Log correlation failed to load</p></div>}>
+                <LogCorrelationView correlations={analysis.correlations ?? []} />
               </ErrorBoundary>
-            </div>
-          )}
-          {activeTab === 'timeline' && <TimelineTab events={analysis.raw_events} />}
-        </main>
-
-        {/* Chat Panel */}
-        {chatOpen && bundleId && (
-          <ErrorBoundary fallback={
-            <div className="w-96 shrink-0 bg-navy-800 border-l border-navy-600 flex items-center justify-center h-[calc(100vh-3.5rem)]">
-              <div className="text-center p-6">
-                <p className="text-sm text-gray-400">Chat unavailable</p>
-                <p className="text-xs text-gray-600 mt-1">Please try again later</p>
+            )}
+            {activeTab === 'logs' && <LogViewerTab logs={analysis.log_entries} />}
+            {activeTab === 'cluster-map' && (
+              <div className="space-y-6">
+                <ClusterHealthGrid resourceHealth={analysis.resource_health ?? []} />
+                <ErrorBoundary fallback={<div className="flex items-center justify-center h-[600px] bg-navy-800 rounded-xl border border-navy-600"><p className="text-sm text-gray-400">3D visualization unavailable</p></div>}>
+                  <Suspense fallback={<div className="flex items-center justify-center h-[600px] bg-navy-800 rounded-xl border border-navy-600"><div className="w-8 h-8 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" /></div>}>
+                    <ClusterMap nodes={analysis.topology_nodes} edges={analysis.topology_edges} />
+                  </Suspense>
+                </ErrorBoundary>
               </div>
-            </div>
-          }>
-            <BundleChat bundleId={bundleId} />
-          </ErrorBoundary>
-        )}
-      </div>
-
-      {/* Bottom Status Bar */}
-      <div className="bg-navy-800 border-t border-navy-600 px-6 py-1.5 flex items-center justify-between text-[11px] font-mono text-gray-500 shrink-0">
-        <div className="flex items-center gap-4">
-          <span className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            AI ENGINE: ACTIVE
-          </span>
-        </div>
-        <div className="flex items-center gap-4">
-          <span>PROCESSING ID: {bundleId ?? 'N/A'}</span>
-          <span>
-            {analysis.analyzed_at ? (() => { try { return format(new Date(analysis.analyzed_at), 'yyyy-MM-dd HH:mm:ss'); } catch { return ''; } })() : ''}
-          </span>
+            )}
+            {activeTab === 'timeline' && <TimelineTab events={analysis.raw_events} />}
+            {activeTab === 'chat' && bundleId && (
+              <ErrorBoundary fallback={<div className="p-8 text-center"><p className="text-sm text-gray-400">Chat unavailable</p></div>}>
+                <div className="max-w-4xl mx-auto h-[calc(100vh-12rem)]">
+                  <BundleChat bundleId={bundleId} />
+                </div>
+              </ErrorBoundary>
+            )}
+          </main>
         </div>
       </div>
-
-      {/* Floating Chat Toggle Button */}
-      <button
-        onClick={() => setChatOpen((prev) => !prev)}
-        aria-label={chatOpen ? 'Close chat panel' : 'Open chat panel'}
-        className={clsx(
-          'fixed bottom-12 right-6 z-50 flex items-center gap-2 px-4 py-2.5 rounded-full shadow-lg transition-colors',
-          chatOpen
-            ? 'bg-navy-700 border border-navy-500 text-gray-300 hover:bg-navy-600'
-            : 'bg-[#06b6d4] hover:bg-cyan-600 text-white'
-        )}
-      >
-        {chatOpen ? <X size={16} /> : <MessageCircle size={16} />}
-        <span className="text-sm font-medium">{chatOpen ? 'Close' : 'Chat'}</span>
-      </button>
 
       {/* Playbook Modal */}
       {playbookOpen && (
-        <PlaybookModal
-          analysis={analysis}
-          bundleFilename={bundle?.filename}
-          onClose={() => setPlaybookOpen(false)}
-        />
+        <PlaybookModal analysis={analysis} bundleFilename={bundle?.filename} onClose={() => setPlaybookOpen(false)} />
       )}
 
       {/* Preflight Viewer Modal */}
       {preflightOpen && bundleId && (
-        <PreflightViewer
-          bundleId={bundleId}
-          onClose={() => setPreflightOpen(false)}
-        />
+        <PreflightViewer bundleId={bundleId} onClose={() => setPreflightOpen(false)} />
       )}
     </div>
   );

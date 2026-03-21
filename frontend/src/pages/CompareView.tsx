@@ -132,7 +132,7 @@ export default function CompareView() {
         <div className="max-w-screen-lg mx-auto px-6 py-16 text-center">
           <AlertCircle size={40} className="text-red-400 mx-auto mb-4" />
           <p className="text-red-400">{error || 'Failed to load comparison'}</p>
-          <Link to="/history" className="text-[#06b6d4] text-sm mt-4 inline-block hover:underline">Back to History</Link>
+          <Link to="/history" className="text-accent-blue text-sm mt-4 inline-block hover:underline">Back to History</Link>
         </div>
       </div>
     );
@@ -148,8 +148,8 @@ export default function CompareView() {
             <Link to="/history" className="p-2 text-gray-500 hover:text-gray-300 hover:bg-navy-700 rounded-lg transition-colors">
               <ArrowLeft size={18} />
             </Link>
-            <div className="w-10 h-10 bg-[#8b5cf6]/10 rounded-xl flex items-center justify-center">
-              <GitCompare size={20} className="text-[#8b5cf6]" />
+            <div className="w-10 h-10 bg-accent-blue/10 rounded-xl flex items-center justify-center">
+              <GitCompare size={20} className="text-accent-blue" />
             </div>
             <div>
               <h1 className="text-xl font-bold text-white">Analysis Comparison</h1>
@@ -168,26 +168,46 @@ export default function CompareView() {
         {/* Health Score Comparison */}
         <div className="grid grid-cols-2 gap-6">
           {[
-            { label: 'Left', analysis: leftAnalysis, bundle: leftBundle },
-            { label: 'Right', analysis: rightAnalysis, bundle: rightBundle },
-          ].map(({ label, analysis, bundle }) => (
-            <div key={label} className="bg-navy-800 border border-navy-700 rounded-xl p-6 flex flex-col items-center gap-3">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label} Bundle</p>
-              <p className="text-sm font-medium text-gray-300 truncate max-w-full">{bundle?.filename || 'Unknown'}</p>
-              <HealthScore score={analysis.cluster_health.score} size={120} />
-              <div className="flex items-center gap-4 mt-2">
-                <span className="flex items-center gap-1 text-xs text-red-400">
-                  <AlertCircle size={12} /> {analysis.cluster_health.critical_count} critical
-                </span>
-                <span className="flex items-center gap-1 text-xs text-amber-400">
-                  <AlertTriangle size={12} /> {analysis.cluster_health.warning_count} warning
-                </span>
-                <span className="flex items-center gap-1 text-xs text-blue-400">
-                  <Info size={12} /> {analysis.cluster_health.info_count} info
-                </span>
+            { label: 'BASELINE', analysis: leftAnalysis, bundle: leftBundle, isActive: false },
+            { label: 'ACTIVE', analysis: rightAnalysis, bundle: rightBundle, isActive: true },
+          ].map(({ label, analysis, bundle, isActive }) => {
+            const score = analysis.cluster_health.score;
+            const riskLevel = score > 70 ? 'Healthy' : score > 40 ? 'Moderate' : 'Critical';
+            const riskColor = score > 70 ? 'text-accent-green' : score > 40 ? 'text-amber-400' : 'text-red-400';
+            const scoreDelta = isActive && leftAnalysis ? analysis.cluster_health.score - leftAnalysis.cluster_health.score : 0;
+            return (
+              <div key={label} className={clsx('bg-navy-800 border rounded-xl p-6', isActive ? 'border-accent-blue/30' : 'border-navy-700')}>
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{label}</span>
+                  {isActive && <span className="text-[10px] font-bold uppercase px-2 py-0.5 bg-accent-blue/20 text-accent-blue rounded">Current</span>}
+                </div>
+                <p className="text-sm text-gray-400 truncate">{bundle?.filename || 'Unknown'}</p>
+                <div className="flex items-baseline gap-3 mt-3">
+                  <span className="text-5xl font-bold text-white">{score}</span>
+                  {isActive && scoreDelta !== 0 && (
+                    <span className={clsx('text-sm font-bold px-1.5 py-0.5 rounded', scoreDelta > 0 ? 'text-accent-green bg-accent-green/10' : 'text-red-400 bg-red-400/10')}>
+                      {scoreDelta > 0 ? '+' : ''}{scoreDelta}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-xs text-gray-500">Risk Level</span>
+                  <span className={clsx('text-sm font-semibold', riskColor)}>{riskLevel}</span>
+                </div>
+                <div className="flex items-center gap-4 mt-4 pt-4 border-t border-navy-700">
+                  <span className="flex items-center gap-1 text-xs text-red-400">
+                    <AlertCircle size={12} /> {analysis.cluster_health.critical_count} critical
+                  </span>
+                  <span className="flex items-center gap-1 text-xs text-amber-400">
+                    <AlertTriangle size={12} /> {analysis.cluster_health.warning_count} warning
+                  </span>
+                  <span className="flex items-center gap-1 text-xs text-blue-400">
+                    <Info size={12} /> {analysis.cluster_health.info_count} info
+                  </span>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Charts */}
@@ -200,13 +220,13 @@ export default function CompareView() {
                 <XAxis dataKey="name" tick={{ fill: '#6b7280', fontSize: 12 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: '#6b7280', fontSize: 12 }} axisLine={false} tickLine={false} allowDecimals={false} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: '#1a2332', border: '1px solid #2d3748', borderRadius: '8px' }}
+                  contentStyle={{ backgroundColor: '#1a2332', border: '1px solid #243044', borderRadius: '8px' }}
                   labelStyle={{ color: '#e5e7eb' }}
                   itemStyle={{ color: '#e5e7eb' }}
                 />
                 <Legend wrapperStyle={{ fontSize: '12px' }} />
-                <Bar dataKey="left" name={leftBundle?.filename?.slice(0, 20) || 'Left'} fill="#06b6d4" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="right" name={rightBundle?.filename?.slice(0, 20) || 'Right'} fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="left" name={leftBundle?.filename?.slice(0, 20) || 'Baseline'} fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="right" name={rightBundle?.filename?.slice(0, 20) || 'Active'} fill="#8b5cf6" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -219,13 +239,13 @@ export default function CompareView() {
                 <XAxis dataKey="name" tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: '#6b7280', fontSize: 12 }} axisLine={false} tickLine={false} allowDecimals={false} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: '#1a2332', border: '1px solid #2d3748', borderRadius: '8px' }}
+                  contentStyle={{ backgroundColor: '#1a2332', border: '1px solid #243044', borderRadius: '8px' }}
                   labelStyle={{ color: '#e5e7eb' }}
                   itemStyle={{ color: '#e5e7eb' }}
                 />
                 <Legend wrapperStyle={{ fontSize: '12px' }} />
-                <Bar dataKey="left" name={leftBundle?.filename?.slice(0, 20) || 'Left'} fill="#06b6d4" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="right" name={rightBundle?.filename?.slice(0, 20) || 'Right'} fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="left" name={leftBundle?.filename?.slice(0, 20) || 'Baseline'} fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="right" name={rightBundle?.filename?.slice(0, 20) || 'Active'} fill="#8b5cf6" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -239,10 +259,10 @@ export default function CompareView() {
               <CheckCircle size={12} className="text-emerald-400" /> In both
             </span>
             <span className="flex items-center gap-1.5 text-gray-400">
-              <MinusCircle size={12} className="text-[#06b6d4]" /> Left only
+              <MinusCircle size={12} className="text-blue-400" /> Baseline only
             </span>
             <span className="flex items-center gap-1.5 text-gray-400">
-              <MinusCircle size={12} className="text-[#8b5cf6]" /> Right only
+              <MinusCircle size={12} className="text-[#8b5cf6]" /> Active only
             </span>
           </div>
           <div className="space-y-1.5">
@@ -254,21 +274,21 @@ export default function CompareView() {
                   className={clsx(
                     'flex items-center gap-3 py-2.5 px-3 rounded-lg text-sm',
                     diff.side === 'both' ? 'bg-navy-700/30' :
-                    diff.side === 'left' ? 'bg-[#06b6d4]/5 border border-[#06b6d4]/20' :
+                    diff.side === 'left' ? 'bg-blue-500/5 border border-blue-500/20' :
                     'bg-[#8b5cf6]/5 border border-[#8b5cf6]/20'
                   )}
                 >
                   {diff.side === 'both' ? (
                     <CheckCircle size={14} className="text-emerald-400 shrink-0" />
                   ) : diff.side === 'left' ? (
-                    <MinusCircle size={14} className="text-[#06b6d4] shrink-0" />
+                    <MinusCircle size={14} className="text-blue-400 shrink-0" />
                   ) : (
                     <MinusCircle size={14} className="text-[#8b5cf6] shrink-0" />
                   )}
                   {issue && <SeverityBadge severity={issue.severity} />}
                   <span className="text-gray-300 truncate">{diff.title}</span>
                   <span className="text-xs text-gray-500 ml-auto shrink-0">
-                    {diff.side === 'both' ? 'Both' : diff.side === 'left' ? 'Left only' : 'Right only'}
+                    {diff.side === 'both' ? 'Both' : diff.side === 'left' ? 'Baseline only' : 'Active only'}
                   </span>
                 </div>
               );

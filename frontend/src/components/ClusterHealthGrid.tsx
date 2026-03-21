@@ -35,7 +35,7 @@ export default function ClusterHealthGrid({ resourceHealth }: Props) {
     return groups;
   }, [resourceHealth]);
 
-  const groupOrder = ['Node', 'Deployment', 'Pod', 'Service'];
+  const groupOrder = ['Node', 'Deployment', 'StatefulSet', 'DaemonSet', 'Job', 'Pod', 'Service', 'Ingress'];
 
   const sortedKeys = useMemo(() => {
     const keys = Object.keys(grouped);
@@ -62,7 +62,7 @@ export default function ClusterHealthGrid({ resourceHealth }: Props) {
         <h3 className="text-base font-semibold text-white">Cluster Resource Health</h3>
         <span className="text-xs text-gray-500">{resourceHealth.length} resources</span>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {sortedKeys.map((type) => {
           const dots = grouped[type];
           const counts: Record<string, number> = {};

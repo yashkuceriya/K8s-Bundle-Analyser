@@ -216,6 +216,101 @@ BEHAVIORAL CONSTRAINTS:
                 log_lines.append(f"- [{source}] {msg}")
             sections.append(f"## Error/Warning Logs (last {len(log_lines)})\n" + "\n".join(log_lines))
 
+        # Degraded Workloads
+        degraded_lines: list[str] = []
+        for deploy in parsed_data.get("deployments", []):
+            meta = deploy.get("metadata", {})
+            name = meta.get("name", "unknown")
+            ns = meta.get("namespace", "default")
+            status_obj = deploy.get("status", {})
+            ready = status_obj.get("readyReplicas", 0) or 0
+            desired = status_obj.get("replicas", 0) or 0
+            if desired > 0 and ready < desired:
+                degraded_lines.append(f"- Deployment {ns}/{name}: {ready}/{desired} ready")
+        for sts in parsed_data.get("statefulsets", []):
+            meta = sts.get("metadata", {})
+            name = meta.get("name", "unknown")
+            ns = meta.get("namespace", "default")
+            desired = sts.get("spec", {}).get("replicas", 0) or 0
+            ready = sts.get("status", {}).get("readyReplicas", 0) or 0
+            if desired > 0 and ready < desired:
+                degraded_lines.append(f"- StatefulSet {ns}/{name}: {ready}/{desired} ready")
+        for ds in parsed_data.get("daemonsets", []):
+            meta = ds.get("metadata", {})
+            name = meta.get("name", "unknown")
+            ns = meta.get("namespace", "default")
+            desired = ds.get("status", {}).get("desiredNumberScheduled", 0) or 0
+            ready = ds.get("status", {}).get("numberReady", 0) or 0
+            if desired > 0 and ready < desired:
+                degraded_lines.append(f"- DaemonSet {ns}/{name}: {ready}/{desired} ready")
+        if degraded_lines:
+            sections.append(f"## Degraded Workloads ({len(degraded_lines)})\n" + "\n".join(degraded_lines))
+
+        # Unhealthy Pod Ownership — trace failing pods back to controllers
+        unhealthy_pods_lines: list[str] = []
+        for pod in pods:
+            phase = pod.get("status", {}).get("phase", "Unknown")
+            if phase in ("Running", "Succeeded"):
+                # Check for running pods with issues
+                has_issue = False
+                for cs in pod.get("status", {}).get("containerStatuses", []) or []:
+                    if cs.get("restartCount", 0) > 5 or cs.get("state", {}).get("waiting", {}).get("reason") in ("CrashLoopBackOff", "ImagePullBackOff"):
+                        has_issue = True
+                        break
+                if not has_issue:
+                    continue
+            name = pod.get("metadata", {}).get("name", "unknown")
+            ns = pod.get("metadata", {}).get("namespace", "unknown")
+            owners = pod.get("metadata", {}).get("ownerReferences", []) or []
+            owner_str = ", ".join(f"{o.get('kind')}/{o.get('name')}" for o in owners) if owners else "none"
+            unhealthy_pods_lines.append(f"- {ns}/{name} (phase={phase}, owner={owner_str})")
+            if len(unhealthy_pods_lines) >= 20:
+                break
+        if unhealthy_pods_lines:
+            sections.append(f"## Unhealthy Pod Ownership ({len(unhealthy_pods_lines)})\n" + "\n".join(unhealthy_pods_lines))
+
+        # Ingress Routes
+        ingresses = parsed_data.get("ingresses", [])
+        if ingresses:
+            ing_lines: list[str] = []
+            for ing in ingresses[:20]:
+                meta = ing.get("metadata", {})
+                name = meta.get("name", "unknown")
+                ns = meta.get("namespace", "default")
+                for rule in ing.get("spec", {}).get("rules", []) or []:
+                    host = rule.get("host", "*")
+                    for path_entry in (rule.get("http", {}) or {}).get("paths", []) or []:
+                        path = path_entry.get("path", "/")
+                        backend = path_entry.get("backend", {})
+                        svc = backend.get("service", {}).get("name", backend.get("serviceName", "?"))
+                        ing_lines.append(f"- {ns}/{name}: {host}{path} -> {svc}")
+            if ing_lines:
+                sections.append(f"## Ingress Routes ({len(ing_lines)})\n" + "\n".join(ing_lines))
+
+        # HPA Scaling Concerns
+        hpas = parsed_data.get("hpas", [])
+        if hpas:
+            hpa_lines: list[str] = []
+            for hpa in hpas[:20]:
+                meta = hpa.get("metadata", {})
+                name = meta.get("name", "unknown")
+                ns = meta.get("namespace", "default")
+                spec = hpa.get("spec", {})
+                status = hpa.get("status", {})
+                max_r = spec.get("maxReplicas", 0) or 0
+                current = status.get("currentReplicas", 0) or 0
+                conditions = status.get("conditions", []) or []
+                concern = ""
+                if max_r > 0 and current >= max_r:
+                    concern = " [AT MAX]"
+                for c in conditions:
+                    if c.get("type") == "ScalingLimited" and c.get("status") == "True":
+                        concern = f" [LIMITED: {c.get('message', '')[:100]}]"
+                if concern:
+                    hpa_lines.append(f"- {ns}/{name}: {current}/{max_r} replicas{concern}")
+            if hpa_lines:
+                sections.append(f"## HPA Scaling Concerns ({len(hpa_lines)})\n" + "\n".join(hpa_lines))
+
         # Heuristic findings
         if heuristic_issues:
             issue_lines = []

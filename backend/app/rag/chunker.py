@@ -169,6 +169,112 @@ def chunk_bundle(bundle_id: str, parsed_data: dict[str, Any]) -> list[dict]:
         content="\n".join(summary_lines),
     ))
 
+    # 6. StatefulSet chunks
+    for sts in parsed_data.get("statefulsets", []):
+        meta = sts.get("metadata", {})
+        name = meta.get("name", "unknown")
+        ns = meta.get("namespace", "unknown")
+        status = sts.get("status", {})
+        spec = sts.get("spec", {})
+        replicas = spec.get("replicas", 0)
+        ready = status.get("readyReplicas", 0) or 0
+        lines = [
+            f"StatefulSet: {ns}/{name}",
+            f"Replicas: {replicas} desired, {ready} ready",
+        ]
+        if ready < (replicas or 0):
+            lines.append(f"WARNING: {(replicas or 0) - ready} replicas not ready")
+        svc_name = spec.get("serviceName", "")
+        if svc_name:
+            lines.append(f"Service: {svc_name}")
+        chunks.append(_make_chunk(
+            bundle_id=bundle_id,
+            chunk_type="statefulset_status",
+            content="\n".join(lines),
+            namespace=ns,
+            resource_kind="StatefulSet",
+            resource_name=name,
+            severity="warning" if ready < (replicas or 0) else "healthy",
+        ))
+
+    # 7. DaemonSet chunks
+    for ds in parsed_data.get("daemonsets", []):
+        meta = ds.get("metadata", {})
+        name = meta.get("name", "unknown")
+        ns = meta.get("namespace", "unknown")
+        status = ds.get("status", {})
+        desired = status.get("desiredNumberScheduled", 0) or 0
+        ready = status.get("numberReady", 0) or 0
+        lines = [
+            f"DaemonSet: {ns}/{name}",
+            f"Desired: {desired}, Ready: {ready}",
+        ]
+        if ready < desired:
+            lines.append(f"WARNING: {desired - ready} nodes missing DaemonSet pod")
+        chunks.append(_make_chunk(
+            bundle_id=bundle_id,
+            chunk_type="daemonset_status",
+            content="\n".join(lines),
+            namespace=ns,
+            resource_kind="DaemonSet",
+            resource_name=name,
+            severity="warning" if ready < desired else "healthy",
+        ))
+
+    # 8. Job chunks
+    for job in parsed_data.get("jobs", []):
+        meta = job.get("metadata", {})
+        name = meta.get("name", "unknown")
+        ns = meta.get("namespace", "unknown")
+        status = job.get("status", {})
+        succeeded = status.get("succeeded", 0) or 0
+        failed = status.get("failed", 0) or 0
+        conditions = status.get("conditions", []) or []
+        lines = [
+            f"Job: {ns}/{name}",
+            f"Succeeded: {succeeded}, Failed: {failed}",
+        ]
+        for c in conditions:
+            lines.append(f"Condition: {c.get('type')}={c.get('status')} - {c.get('message', '')}")
+        sev = "critical" if failed > 0 else "healthy"
+        chunks.append(_make_chunk(
+            bundle_id=bundle_id,
+            chunk_type="job_status",
+            content="\n".join(lines),
+            namespace=ns,
+            resource_kind="Job",
+            resource_name=name,
+            severity=sev,
+        ))
+
+    # 9. Ingress chunks
+    for ing in parsed_data.get("ingresses", []):
+        meta = ing.get("metadata", {})
+        name = meta.get("name", "unknown")
+        ns = meta.get("namespace", "unknown")
+        spec = ing.get("spec", {})
+        lines = [f"Ingress: {ns}/{name}"]
+        for rule in spec.get("rules", []) or []:
+            host = rule.get("host", "*")
+            for path_entry in (rule.get("http", {}) or {}).get("paths", []) or []:
+                path = path_entry.get("path", "/")
+                backend = path_entry.get("backend", {})
+                svc = backend.get("service", {}).get("name", backend.get("serviceName", "?"))
+                port = backend.get("service", {}).get("port", {}).get("number", backend.get("servicePort", "?"))
+                lines.append(f"  {host}{path} -> {svc}:{port}")
+        tls = spec.get("tls", []) or []
+        if tls:
+            lines.append(f"TLS: {len(tls)} certificate(s)")
+        chunks.append(_make_chunk(
+            bundle_id=bundle_id,
+            chunk_type="ingress_config",
+            content="\n".join(lines),
+            namespace=ns,
+            resource_kind="Ingress",
+            resource_name=name,
+            severity="healthy",
+        ))
+
     logger.info("Chunked bundle %s into %d chunks", bundle_id, len(chunks))
     return chunks
 

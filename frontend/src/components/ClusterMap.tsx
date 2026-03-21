@@ -1,7 +1,7 @@
 import { useEffect, useRef, useMemo, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { Server, Box, Hexagon, Circle, Layers, Search, Maximize2, Minimize2, Eye, EyeOff } from 'lucide-react';
+import { Server, Box, Hexagon, Circle, Layers, Search, Maximize2, Minimize2, Eye, EyeOff, Database, Shield, Briefcase, Globe } from 'lucide-react';
 import clsx from 'clsx';
 import type { TopologyNode, TopologyEdge } from '../types';
 
@@ -19,6 +19,7 @@ const statusHex: Record<string, number> = {
 };
 const typeHex: Record<string, number> = {
   node: 0x3b82f6, namespace: 0x8b5cf6, deployment: 0x06b6d4, service: 0xf59e0b,
+  statefulset: 0x8b5cf6, daemonset: 0x6366f1, job: 0xa855f7, ingress: 0x14b8a6,
 };
 const statusStr: Record<string, string> = {
   healthy: '#10b981', running: '#10b981', ready: '#10b981',
@@ -26,7 +27,14 @@ const statusStr: Record<string, string> = {
   warning: '#f59e0b', pending: '#f59e0b', unknown: '#6b7280',
 };
 function getColor(t: string, s: string): number {
-  return t.toLowerCase() === 'pod' ? (statusHex[s.toLowerCase()] ?? 0x6b7280) : (typeHex[t.toLowerCase()] ?? 0x6b7280);
+  const sl = s.toLowerCase();
+  // Unhealthy resources always show status color — red/yellow pops out
+  if (sl === 'critical' || sl === 'error') return 0xef4444;
+  if (sl === 'warning' || sl === 'pending') return 0xf59e0b;
+  // Pods show green when healthy for quick scan
+  if (t.toLowerCase() === 'pod') return statusHex[sl] ?? 0x6b7280;
+  // Healthy non-pods use type color
+  return typeHex[t.toLowerCase()] ?? 0x6b7280;
 }
 
 /* ─── Radial hierarchical layout ─── */
@@ -34,18 +42,22 @@ interface Pos3 { node: TopologyNode; p: THREE.Vector3 }
 
 function layout(nodes: TopologyNode[]): Pos3[] {
   const layers: Record<string, { ring: number; yOff: number; size: number }> = {
-    node:       { ring: 0,   yOff: 2,    size: 0.7 },
-    namespace:  { ring: 3.5, yOff: 1,    size: 0.5 },
-    deployment: { ring: 6.5, yOff: 0,    size: 0.4 },
-    service:    { ring: 6.5, yOff: -0.5, size: 0.38 },
-    pod:        { ring: 10,  yOff: -1.5, size: 0.28 },
+    node:        { ring: 0,   yOff: 2,    size: 0.7 },
+    namespace:   { ring: 3.5, yOff: 1,    size: 0.5 },
+    deployment:  { ring: 6.5, yOff: 0,    size: 0.4 },
+    statefulset: { ring: 6.5, yOff: 0.8,  size: 0.4 },
+    daemonset:   { ring: 6.5, yOff: -0.3, size: 0.38 },
+    job:         { ring: 7.5, yOff: -0.8, size: 0.32 },
+    service:     { ring: 6.5, yOff: -0.5, size: 0.38 },
+    ingress:     { ring: 4.5, yOff: -0.5, size: 0.38 },
+    pod:         { ring: 10,  yOff: -1.5, size: 0.28 },
   };
 
   const grouped: Record<string, TopologyNode[]> = {};
   nodes.forEach(n => { (grouped[n.type.toLowerCase()] ??= []).push(n); });
 
   const result: Pos3[] = [];
-  const order = ['node', 'namespace', 'deployment', 'service', 'pod'];
+  const order = ['node', 'namespace', 'ingress', 'deployment', 'statefulset', 'daemonset', 'service', 'job', 'pod'];
 
   for (const type of order) {
     const grp = grouped[type];
@@ -89,7 +101,7 @@ function layout(nodes: TopologyNode[]): Pos3[] {
 }
 
 function getNodeSize(type: string): number {
-  return { node: 0.7, namespace: 0.5, deployment: 0.4, service: 0.38, pod: 0.28 }[type.toLowerCase()] ?? 0.3;
+  return { node: 0.7, namespace: 0.5, deployment: 0.4, statefulset: 0.4, daemonset: 0.38, job: 0.32, service: 0.38, ingress: 0.38, pod: 0.28 }[type.toLowerCase()] ?? 0.3;
 }
 
 /* ─── Build geometry by type ─── */
@@ -101,8 +113,16 @@ function createNodeGeometry(type: string, size: number): THREE.BufferGeometry {
       return new THREE.OctahedronGeometry(size * 1.3);
     case 'deployment':
       return new THREE.CylinderGeometry(size * 0.9, size * 0.9, size * 1.4, 6);
+    case 'statefulset':
+      return new THREE.CylinderGeometry(size * 0.5, size * 1.0, size * 1.5, 6); // tapered hexagonal
+    case 'daemonset':
+      return new THREE.TorusKnotGeometry(size * 0.6, size * 0.2, 48, 8, 2, 3);
+    case 'job':
+      return new THREE.TetrahedronGeometry(size * 1.2);
     case 'service':
       return new THREE.DodecahedronGeometry(size * 1.1);
+    case 'ingress':
+      return new THREE.ConeGeometry(size * 0.9, size * 1.6, 4); // diamond/arrow shape
     case 'pod':
     default:
       return new THREE.SphereGeometry(size, 24, 24);
@@ -242,7 +262,7 @@ function createScene(
   const edgeAnims: { curve: THREE.QuadraticBezierCurve3; sp: number; off: number }[] = [];
 
   const edgeColors: Record<string, number> = {
-    runs: 0x3b82f6, owns: 0x06b6d4, selects: 0xf59e0b, default: 0x334466,
+    runs: 0x3b82f6, owns: 0x06b6d4, selects: 0xf59e0b, routes: 0x14b8a6, default: 0x334466,
   };
 
   edges.forEach(e => {
@@ -398,7 +418,11 @@ function NodeIcon({ type, size = 14 }: { type: string; size?: number }) {
   switch (type.toLowerCase()) {
     case 'node': return <Server size={size} />;
     case 'deployment': return <Box size={size} />;
+    case 'statefulset': return <Database size={size} />;
+    case 'daemonset': return <Shield size={size} />;
+    case 'job': return <Briefcase size={size} />;
     case 'service': return <Hexagon size={size} />;
+    case 'ingress': return <Globe size={size} />;
     case 'pod': return <Circle size={size} />;
     case 'namespace': return <Layers size={size} />;
     default: return <Box size={size} />;
@@ -579,29 +603,46 @@ export default function ClusterMap({ nodes, edges }: ClusterMapProps) {
       )}
 
       {/* Legend */}
-      <div className="absolute top-4 left-4 z-10 bg-[#0c1222]/90 backdrop-blur-md border border-navy-600 rounded-xl p-3.5 space-y-1.5 min-w-[160px]">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-2">Cluster Topology</p>
+      <div className="absolute top-4 left-4 z-10 bg-[#0c1222]/90 backdrop-blur-md border border-navy-600 rounded-xl p-3.5 space-y-1.5 min-w-[160px] max-h-[calc(100%-6rem)] overflow-y-auto">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-2">Resources</p>
         {[
-          { label: 'Node', color: '#3b82f6', icon: 'node', shape: 'Cube' },
-          { label: 'Namespace', color: '#8b5cf6', icon: 'namespace', shape: 'Octahedron' },
-          { label: 'Deployment', color: '#06b6d4', icon: 'deployment', shape: 'Hexagonal' },
-          { label: 'Service', color: '#f59e0b', icon: 'service', shape: 'Dodecahedron' },
-          { label: 'Pod (healthy)', color: '#10b981', icon: 'pod', shape: 'Sphere' },
-          { label: 'Pod (error)', color: '#ef4444', icon: 'pod', shape: 'Sphere' },
-        ].map(item => (
+          { label: 'Node', color: '#3b82f6', icon: 'node' },
+          { label: 'Namespace', color: '#8b5cf6', icon: 'namespace' },
+          { label: 'Deployment', color: '#06b6d4', icon: 'deployment' },
+          { label: 'StatefulSet', color: '#8b5cf6', icon: 'statefulset' },
+          { label: 'DaemonSet', color: '#6366f1', icon: 'daemonset' },
+          { label: 'Job', color: '#a855f7', icon: 'job' },
+          { label: 'Service', color: '#f59e0b', icon: 'service' },
+          { label: 'Ingress', color: '#14b8a6', icon: 'ingress' },
+          { label: 'Pod', color: '#10b981', icon: 'pod' },
+        ].filter(item => typeCounts[item.icon]).map(item => (
           <div key={item.label} className="flex items-center gap-2 text-[11px] text-gray-400">
             <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: item.color, boxShadow: `0 0 4px ${item.color}40` }} />
             <NodeIcon type={item.icon} size={11} />
             <span className="flex-1">{item.label}</span>
-            {typeCounts[item.icon] && <span className="text-[9px] text-gray-600">{typeCounts[item.icon]}</span>}
+            <span className="text-[9px] text-gray-600">{typeCounts[item.icon]}</span>
           </div>
         ))}
+        <div className="border-t border-navy-600 mt-2 pt-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Status</p>
+          {[
+            { label: 'Healthy', color: '#10b981' },
+            { label: 'Warning', color: '#f59e0b' },
+            { label: 'Critical', color: '#ef4444' },
+          ].map(item => (
+            <div key={item.label} className="flex items-center gap-2 text-[11px] text-gray-400">
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color, boxShadow: `0 0 6px ${item.color}60` }} />
+              <span>{item.label}</span>
+            </div>
+          ))}
+        </div>
         <div className="border-t border-navy-600 mt-2 pt-2">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Connections</p>
           {[
             { label: 'Runs on', color: '#3b82f6' },
             { label: 'Owns', color: '#06b6d4' },
             { label: 'Selects', color: '#f59e0b' },
+            { label: 'Routes', color: '#14b8a6' },
           ].map(item => (
             <div key={item.label} className="flex items-center gap-2 text-[11px] text-gray-400">
               <span className="w-5 h-[3px] rounded-full shrink-0" style={{ backgroundColor: item.color, boxShadow: `0 0 4px ${item.color}60` }} />

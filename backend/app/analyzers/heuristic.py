@@ -34,6 +34,16 @@ class HeuristicAnalyzer:
         self._check_evicted_pods()
         self._check_node_pressure()
         self._check_deprecated_apis()
+        self._check_probe_failures()
+        self._check_job_failures()
+        self._check_cronjob_issues()
+        self._check_statefulset_stuck_rollout()
+        self._check_hpa_unable_to_scale()
+        self._check_ingress_misconfiguration()
+        self._check_service_selector_mismatch()
+        self._check_missing_resource_limits()
+        self._check_init_container_failures()
+        self._check_rbac_failures()
         logger.info("Heuristic analysis found %d issues", len(self.issues))
         return self.issues
 
@@ -225,7 +235,8 @@ class HeuristicAnalyzer:
             if event_type != "Warning":
                 continue
             # Check for significant failure patterns
-            fail_patterns = ["Failed", "Error", "BackOff", "Unhealthy", "FailedScheduling",
+            # Note: "Unhealthy" is handled by _check_probe_failures with better severity logic
+            fail_patterns = ["Failed", "Error", "BackOff", "FailedScheduling",
                              "FailedMount", "FailedAttachVolume", "FailedCreate"]
             if not any(pat.lower() in reason.lower() for pat in fail_patterns):
                 continue
@@ -533,4 +544,460 @@ class HeuristicAnalyzer:
                     "See https://kubernetes.io/docs/reference/using-api/deprecation-guide/"
                 ),
                 ai_confidence=0.90,
+            ))
+
+    def _check_probe_failures(self) -> None:
+        """Detect liveness/readiness probe failures from events and logs."""
+        # Group Unhealthy events by pod to avoid one issue per event
+        pod_probes: dict[str, dict] = {}  # key: "ns/pod" -> aggregated info
+        for event in self.data.get("events", []):
+            if event.get("type") != "Warning":
+                continue
+            if event.get("reason") != "Unhealthy":
+                continue
+            message = event.get("message", "")
+            involved = event.get("involvedObject", {})
+            pod_name = involved.get("name", "unknown")
+            ns = involved.get("namespace", "")
+            count = event.get("count", 1)
+            key = f"{ns}/{pod_name}"
+
+            if key not in pod_probes:
+                pod_probes[key] = {
+                    "pod_name": pod_name, "ns": ns,
+                    "total_count": 0, "has_liveness": False,
+                    "messages": [],
+                }
+            info = pod_probes[key]
+            info["total_count"] += count
+            if "liveness" in message.lower():
+                info["has_liveness"] = True
+            if len(info["messages"]) < 3:
+                info["messages"].append(message[:200])
+
+        for key, info in pod_probes.items():
+            pod_name = info["pod_name"]
+            ns = info["ns"]
+            # Liveness failures are critical (cause restarts); readiness is warning
+            severity = Severity.critical if info["has_liveness"] else Severity.warning
+
+            self.issues.append(Issue(
+                severity=severity,
+                title=f"Probe failure: {pod_name}",
+                category="pod-health",
+                resource=f"pod/{pod_name}",
+                namespace=ns or None,
+                description=(
+                    f"Pod '{pod_name}' has failing health probes. "
+                    f"Total occurrences: {info['total_count']}."
+                ),
+                evidence=[f"Unhealthy: {m}" for m in info["messages"]],
+                remediation=(
+                    "Review the probe configuration. Common causes: "
+                    "incorrect port, path, or timeout settings. "
+                    "Check if the application starts slowly and needs a higher initialDelaySeconds. "
+                    f"kubectl describe pod {pod_name}" + (f" -n {ns}" if ns else "")
+                ),
+                ai_confidence=0.90,
+            ))
+
+    def _check_job_failures(self) -> None:
+        """Detect failed Kubernetes Jobs."""
+        for job in self.data.get("jobs", []):
+            meta = job.get("metadata", {})
+            name = meta.get("name", "unknown")
+            ns = meta.get("namespace", "unknown")
+            status = job.get("status", {})
+            failed = status.get("failed", 0) or 0
+            conditions = status.get("conditions", []) or []
+
+            is_failed = failed > 0
+            if not is_failed:
+                for cond in conditions:
+                    if cond.get("type") == "Failed" and cond.get("status") == "True":
+                        is_failed = True
+                        break
+
+            if is_failed:
+                reason = ""
+                for cond in conditions:
+                    if cond.get("type") == "Failed":
+                        reason = cond.get("reason", "")
+                        break
+
+                self.issues.append(Issue(
+                    severity=Severity.warning,
+                    title=f"Job failed: {name}",
+                    category="pod-health",
+                    resource=f"job/{name}",
+                    namespace=ns,
+                    description=(
+                        f"Job '{name}' in namespace '{ns}' has {failed} failure(s). "
+                        f"{'Reason: ' + reason if reason else 'Check job events for details.'}"
+                    ),
+                    evidence=[
+                        f"Failed count: {failed}",
+                        f"Reason: {reason}" if reason else "No failure reason available",
+                    ],
+                    remediation=(
+                        f"Check job pod logs: kubectl logs job/{name} -n {ns}. "
+                        f"Describe the job: kubectl describe job {name} -n {ns}. "
+                        "Common causes: application errors, misconfigured commands, or resource limits."
+                    ),
+                    ai_confidence=0.90,
+                ))
+
+    def _check_cronjob_issues(self) -> None:
+        """Detect suspended or problematic CronJobs."""
+        for cj in self.data.get("cronjobs", []):
+            meta = cj.get("metadata", {})
+            name = meta.get("name", "unknown")
+            ns = meta.get("namespace", "unknown")
+            spec = cj.get("spec", {})
+            status = cj.get("status", {})
+
+            issues_found = []
+
+            # Check if suspended
+            if spec.get("suspend", False):
+                issues_found.append("CronJob is suspended")
+
+            # Check for missed schedules (lastScheduleTime far in the past relative to schedule)
+            last_schedule = status.get("lastScheduleTime")
+            if not last_schedule and not spec.get("suspend", False):
+                issues_found.append("CronJob has never been scheduled")
+
+            if issues_found:
+                self.issues.append(Issue(
+                    severity=Severity.warning,
+                    title=f"CronJob issue: {name}",
+                    category="pod-health",
+                    resource=f"cronjob/{name}",
+                    namespace=ns,
+                    description=(
+                        f"CronJob '{name}' in namespace '{ns}' has issues: "
+                        + "; ".join(issues_found)
+                    ),
+                    evidence=issues_found,
+                    remediation=(
+                        f"Review the CronJob: kubectl describe cronjob {name} -n {ns}. "
+                        "If suspended, ensure it was intentional. "
+                        "Check for resource quota issues preventing job creation."
+                    ),
+                    ai_confidence=0.85,
+                ))
+
+    def _check_statefulset_stuck_rollout(self) -> None:
+        """Detect StatefulSets with stuck rollouts."""
+        for sts in self.data.get("statefulsets", []):
+            meta = sts.get("metadata", {})
+            name = meta.get("name", "unknown")
+            ns = meta.get("namespace", "unknown")
+            spec = sts.get("spec", {})
+            status = sts.get("status", {})
+
+            desired = spec.get("replicas", 0) or 0
+            ready = status.get("readyReplicas", 0) or 0
+            current = status.get("currentReplicas", 0) or 0
+            updated = status.get("updatedReplicas", 0) or 0
+
+            if desired == 0:
+                continue
+
+            if ready < desired:
+                severity = Severity.critical if ready == 0 else Severity.warning
+                self.issues.append(Issue(
+                    severity=severity,
+                    title=f"StatefulSet degraded: {name} ({ready}/{desired} ready)",
+                    category="pod-health",
+                    resource=f"statefulset/{name}",
+                    namespace=ns,
+                    description=(
+                        f"StatefulSet '{name}' in namespace '{ns}' has {ready}/{desired} "
+                        f"ready replicas. Current: {current}, Updated: {updated}."
+                    ),
+                    evidence=[
+                        f"Desired: {desired}",
+                        f"Ready: {ready}",
+                        f"Current: {current}",
+                        f"Updated: {updated}",
+                    ],
+                    remediation=(
+                        f"Check StatefulSet pods: kubectl get pods -l app={name} -n {ns}. "
+                        f"Describe: kubectl describe statefulset {name} -n {ns}. "
+                        "StatefulSet rollouts are sequential — a stuck pod blocks the rest."
+                    ),
+                    ai_confidence=0.90,
+                ))
+
+    def _check_hpa_unable_to_scale(self) -> None:
+        """Detect HPAs at max replicas or with scaling issues."""
+        for hpa in self.data.get("hpas", []):
+            meta = hpa.get("metadata", {})
+            name = meta.get("name", "unknown")
+            ns = meta.get("namespace", "unknown")
+            spec = hpa.get("spec", {})
+            status = hpa.get("status", {})
+
+            max_replicas = spec.get("maxReplicas", 0) or 0
+            current = status.get("currentReplicas", 0) or 0
+            conditions = status.get("conditions", []) or []
+
+            issues_found = []
+
+            # Check if at max replicas
+            if max_replicas > 0 and current >= max_replicas:
+                issues_found.append(f"Running at max replicas ({current}/{max_replicas})")
+
+            # Check for ScalingLimited or AbleToScale=False conditions
+            for cond in conditions:
+                cond_type = cond.get("type", "")
+                cond_status = cond.get("status", "")
+                if cond_type == "ScalingLimited" and cond_status == "True":
+                    issues_found.append(f"ScalingLimited: {cond.get('message', '')[:200]}")
+                elif cond_type == "AbleToScale" and cond_status == "False":
+                    issues_found.append(f"Unable to scale: {cond.get('message', '')[:200]}")
+
+            if issues_found:
+                self.issues.append(Issue(
+                    severity=Severity.warning,
+                    title=f"HPA scaling issue: {name}",
+                    category="resource-usage",
+                    resource=f"hpa/{name}",
+                    namespace=ns,
+                    description=(
+                        f"HPA '{name}' in namespace '{ns}' has scaling concerns: "
+                        + "; ".join(issues_found)
+                    ),
+                    evidence=issues_found,
+                    remediation=(
+                        f"Review HPA status: kubectl describe hpa {name} -n {ns}. "
+                        "Consider increasing maxReplicas or adding node capacity. "
+                        "Check metrics-server is providing data."
+                    ),
+                    ai_confidence=0.85,
+                ))
+
+    def _check_ingress_misconfiguration(self) -> None:
+        """Detect ingresses pointing to non-existent backend services."""
+        # Build set of existing services per namespace
+        svc_by_ns: dict[str, set[str]] = {}
+        for svc in self.data.get("services", []):
+            svc_ns = svc.get("metadata", {}).get("namespace", "default")
+            svc_name = svc.get("metadata", {}).get("name", "")
+            if svc_name:
+                svc_by_ns.setdefault(svc_ns, set()).add(svc_name)
+
+        for ing in self.data.get("ingresses", []):
+            meta = ing.get("metadata", {})
+            name = meta.get("name", "unknown")
+            ns = meta.get("namespace", "default")
+            spec = ing.get("spec", {})
+
+            ns_services = svc_by_ns.get(ns, set())
+            missing_backends = []
+
+            for rule in spec.get("rules", []) or []:
+                for path_entry in (rule.get("http", {}) or {}).get("paths", []) or []:
+                    backend = path_entry.get("backend", {})
+                    # Handle both v1 and v1beta1 ingress formats
+                    svc_name = backend.get("service", {}).get("name", backend.get("serviceName", ""))
+                    if svc_name and svc_name not in ns_services:
+                        host = rule.get("host", "*")
+                        path = path_entry.get("path", "/")
+                        missing_backends.append(f"{host}{path} -> {svc_name}")
+
+            if missing_backends:
+                self.issues.append(Issue(
+                    severity=Severity.warning,
+                    title=f"Ingress bad backend: {name}",
+                    category="networking",
+                    resource=f"ingress/{name}",
+                    namespace=ns,
+                    description=(
+                        f"Ingress '{name}' in namespace '{ns}' references services "
+                        f"that don't exist: {', '.join(missing_backends)}"
+                    ),
+                    evidence=[f"Missing: {b}" for b in missing_backends],
+                    remediation=(
+                        f"Verify backend services exist in namespace '{ns}'. "
+                        f"kubectl get services -n {ns}. "
+                        "Create the missing service or update the ingress backend."
+                    ),
+                    ai_confidence=0.90,
+                ))
+
+    def _check_service_selector_mismatch(self) -> None:
+        """Detect services whose selectors match zero pods."""
+        pods = self.data.get("pods", [])
+        for svc in self.data.get("services", []):
+            meta = svc.get("metadata", {})
+            name = meta.get("name", "unknown")
+            ns = meta.get("namespace", "default")
+            svc_type = svc.get("spec", {}).get("type", "ClusterIP")
+
+            # Skip headless and ExternalName services
+            if svc_type == "ExternalName":
+                continue
+            selector = svc.get("spec", {}).get("selector") or {}
+            if not selector:
+                continue
+
+            # Count matching pods in the same namespace
+            matching = 0
+            for pod in pods:
+                pod_ns = pod.get("metadata", {}).get("namespace", "default")
+                if pod_ns != ns:
+                    continue
+                pod_labels = pod.get("metadata", {}).get("labels", {}) or {}
+                if all(pod_labels.get(k) == v for k, v in selector.items()):
+                    matching += 1
+
+            if matching == 0:
+                selector_str = ", ".join(f"{k}={v}" for k, v in selector.items())
+                self.issues.append(Issue(
+                    severity=Severity.warning,
+                    title=f"Service has no endpoints: {name}",
+                    category="networking",
+                    resource=f"service/{name}",
+                    namespace=ns,
+                    description=(
+                        f"Service '{name}' in namespace '{ns}' selector ({selector_str}) "
+                        f"matches 0 pods. Traffic to this service will fail."
+                    ),
+                    evidence=[
+                        f"Selector: {selector_str}",
+                        f"Matching pods: 0",
+                        f"Service type: {svc_type}",
+                    ],
+                    remediation=(
+                        f"Check that pods with labels matching {selector_str} exist in namespace '{ns}'. "
+                        f"kubectl get pods -n {ns} -l {selector_str.replace(', ', ',')}. "
+                        "Verify the selector matches the pod template labels in the deployment."
+                    ),
+                    ai_confidence=0.90,
+                ))
+
+    def _check_missing_resource_limits(self) -> None:
+        """Detect containers without resource requests or limits."""
+        pods_missing = []
+        for pod in self.data.get("pods", []):
+            ns, name = self._get_pod_id(pod)
+            phase = pod.get("status", {}).get("phase", "")
+            # Only check running/pending pods
+            if phase not in ("Running", "Pending"):
+                continue
+            spec_containers = pod.get("spec", {}).get("containers", []) or []
+            for container in spec_containers:
+                resources = container.get("resources", {})
+                has_limits = bool(resources.get("limits"))
+                has_requests = bool(resources.get("requests"))
+                if not has_limits and not has_requests:
+                    c_name = container.get("name", "unknown")
+                    pods_missing.append(f"{ns}/{name}/{c_name}")
+                    if len(pods_missing) >= 20:
+                        break
+            if len(pods_missing) >= 20:
+                break
+
+        if pods_missing:
+            self.issues.append(Issue(
+                severity=Severity.info,
+                title=f"Missing resource limits ({len(pods_missing)} container(s))",
+                category="configuration",
+                description=(
+                    f"{len(pods_missing)} container(s) have no resource requests or limits set. "
+                    "This can lead to resource contention, OOM kills, and unpredictable scheduling."
+                ),
+                evidence=pods_missing[:10],
+                remediation=(
+                    "Add resource requests and limits to all containers. "
+                    "Example: resources: {requests: {cpu: 100m, memory: 128Mi}, limits: {cpu: 500m, memory: 512Mi}}. "
+                    "Use kubectl top pods to estimate current usage."
+                ),
+                ai_confidence=0.85,
+            ))
+
+    def _check_init_container_failures(self) -> None:
+        """Detect init containers stuck in failure states."""
+        for pod in self.data.get("pods", []):
+            ns, name = self._get_pod_id(pod)
+            init_statuses = pod.get("status", {}).get("initContainerStatuses", []) or []
+            for cs in init_statuses:
+                c_name = cs.get("name", "unknown")
+                waiting = cs.get("state", {}).get("waiting", {})
+                terminated = cs.get("state", {}).get("terminated", {})
+
+                reason = waiting.get("reason", "") or terminated.get("reason", "")
+                if reason in ("CrashLoopBackOff", "Error", "ImagePullBackOff", "ErrImagePull"):
+                    exit_code = terminated.get("exitCode", "N/A")
+                    self.issues.append(Issue(
+                        severity=Severity.critical,
+                        title=f"Init container failed: {name}/{c_name}",
+                        category="pod-health",
+                        resource=f"pod/{name}",
+                        namespace=ns,
+                        description=(
+                            f"Init container '{c_name}' in pod '{name}' is in {reason} state. "
+                            f"This blocks the pod from starting."
+                        ),
+                        evidence=[
+                            f"Init container: {c_name}",
+                            f"State: {reason}",
+                            f"Exit code: {exit_code}",
+                            f"Message: {waiting.get('message', terminated.get('message', 'N/A'))}",
+                        ],
+                        remediation=(
+                            f"Check init container logs: kubectl logs {name} -c {c_name} -n {ns}. "
+                            "Init containers must complete successfully before the main containers start. "
+                            "Common causes: missing dependencies, incorrect commands, or network issues."
+                        ),
+                        ai_confidence=0.90,
+                    ))
+
+    def _check_rbac_failures(self) -> None:
+        """Detect RBAC/permission failures from events and logs."""
+        rbac_pattern = re.compile(
+            r"(forbidden|cannot .+ in the namespace|RBAC|unauthorized|"
+            r"User .+ cannot|forbidden: User|no RBAC policy matched)",
+            re.IGNORECASE,
+        )
+        found: list[str] = []
+
+        # Check events for Forbidden
+        for event in self.data.get("events", []):
+            msg = event.get("message", "")
+            reason = event.get("reason", "")
+            if reason == "Forbidden" or rbac_pattern.search(msg):
+                involved = event.get("involvedObject", {})
+                resource = f"{involved.get('kind', '')}/{involved.get('name', '')}"
+                found.append(f"Event on {resource}: {msg[:200]}")
+                if len(found) >= 10:
+                    break
+
+        # Check logs
+        if len(found) < 10:
+            for log in self.data.get("logs", []):
+                msg = log.get("message", "")
+                if rbac_pattern.search(msg):
+                    found.append(f"[{log.get('source', '')}] {msg[:200]}")
+                    if len(found) >= 10:
+                        break
+
+        if found:
+            self.issues.append(Issue(
+                severity=Severity.warning,
+                title=f"RBAC/permission failures ({len(found)} occurrence(s))",
+                category="security",
+                description=(
+                    "RBAC authorization failures detected. Services may be unable to access "
+                    "required Kubernetes resources."
+                ),
+                evidence=found[:10],
+                remediation=(
+                    "Review RBAC configuration: kubectl get clusterrolebindings,rolebindings --all-namespaces. "
+                    "Check service account permissions. "
+                    "Ensure pods are using the correct service account with appropriate roles."
+                ),
+                ai_confidence=0.85,
             ))

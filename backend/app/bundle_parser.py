@@ -62,6 +62,24 @@ class BundleParser:
             "analysis_json": None,
             "pvs": [],
             "storage_classes": [],
+            "configmaps": [],
+            "statefulsets": [],
+            "daemonsets": [],
+            "replicasets": [],
+            "jobs": [],
+            "cronjobs": [],
+            "ingresses": [],
+            "hpas": [],
+            "network_policies": [],
+            "service_accounts": [],
+            "pvcs": [],
+            "roles": [],
+            "role_bindings": [],
+            "custom_resource_definitions": [],
+            "limit_ranges": [],
+            "resource_quotas": [],
+            "cluster_roles": [],
+            "cluster_role_bindings": [],
         }
 
         data["cluster_version"] = self._parse_cluster_version()
@@ -79,15 +97,44 @@ class BundleParser:
         sc_raw = self._parse_json_file(self._root / "cluster-resources" / "storage-classes.json")
         data["storage_classes"] = self._extract_items(sc_raw) if sc_raw else []
 
+        # Additional resource types for comprehensive analysis
+        data["configmaps"] = self._parse_resource_by_namespace("configmaps")
+        data["statefulsets"] = self._parse_resource_by_namespace("statefulsets")
+        data["daemonsets"] = self._parse_resource_by_namespace("daemonsets")
+        data["replicasets"] = self._parse_resource_by_namespace("replicasets")
+        data["jobs"] = self._parse_resource_by_namespace("jobs")
+        data["cronjobs"] = self._parse_resource_by_namespace("cronjobs")
+        data["ingresses"] = self._parse_resource_by_namespace("ingresses")
+        data["hpas"] = self._parse_resource_by_namespace("horizontalpodautoscalers")
+        data["network_policies"] = self._parse_resource_by_namespace("network-policies")
+        data["service_accounts"] = self._parse_resource_by_namespace("serviceaccounts")
+        data["pvcs"] = self._parse_resource_by_namespace("pvcs")
+        data["roles"] = self._parse_resource_by_namespace("roles")
+        data["role_bindings"] = self._parse_resource_by_namespace("rolebindings")
+
+        cr_raw = self._parse_json_file(self._root / "cluster-resources" / "custom-resource-definitions.json")
+        data["custom_resource_definitions"] = self._extract_items(cr_raw) if cr_raw else []
+        lr_raw = self._parse_json_file(self._root / "cluster-resources" / "limitranges.json")
+        data["limit_ranges"] = self._extract_items(lr_raw) if lr_raw else []
+        rq_raw = self._parse_json_file(self._root / "cluster-resources" / "resource-quotas.json")
+        data["resource_quotas"] = self._extract_items(rq_raw) if rq_raw else []
+        clusterroles_raw = self._parse_json_file(self._root / "cluster-resources" / "clusterroles.json")
+        data["cluster_roles"] = self._extract_items(clusterroles_raw) if clusterroles_raw else []
+        crb_raw = self._parse_json_file(self._root / "cluster-resources" / "clusterrolebindings.json")
+        data["cluster_role_bindings"] = self._extract_items(crb_raw) if crb_raw else []
+
         # Scan for YAML resources (handles non-standard bundle formats)
         self._scan_yaml_resources(data)
 
         # Summary counts
         logger.info(
-            "Parsed: %d pods, %d deployments, %d services, %d nodes, %d events, %d log entries",
+            "Parsed: %d pods, %d deploys, %d svcs, %d nodes, %d events, %d logs, "
+            "%d sts, %d ds, %d jobs, %d ingresses",
             len(data["pods"]), len(data["deployments"]),
             len(data["services"]), len(data["nodes"]),
             len(data["events"]), len(data["logs"]),
+            len(data["statefulsets"]), len(data["daemonsets"]),
+            len(data["jobs"]), len(data["ingresses"]),
         )
 
         return data
@@ -144,6 +191,24 @@ class BundleParser:
                     data["events"].extend(self._extract_items(content))
                 elif kind == "persistentvolume" or kind == "persistentvolumelist":
                     data["pvs"].extend(self._extract_items(content))
+                elif kind in ("statefulset", "statefulsetlist"):
+                    data["statefulsets"].extend(self._extract_items(content))
+                elif kind in ("daemonset", "daemonsetlist"):
+                    data["daemonsets"].extend(self._extract_items(content))
+                elif kind in ("replicaset", "replicasetlist"):
+                    data["replicasets"].extend(self._extract_items(content))
+                elif kind in ("job", "joblist"):
+                    data["jobs"].extend(self._extract_items(content))
+                elif kind in ("cronjob", "cronjoblist"):
+                    data["cronjobs"].extend(self._extract_items(content))
+                elif kind in ("ingress", "ingresslist"):
+                    data["ingresses"].extend(self._extract_items(content))
+                elif kind in ("horizontalpodautoscaler", "horizontalpodautoscalerlist"):
+                    data["hpas"].extend(self._extract_items(content))
+                elif kind in ("configmap", "configmaplist"):
+                    data["configmaps"].extend(self._extract_items(content))
+                elif kind in ("persistentvolumeclaim", "persistentvolumeclaimlist"):
+                    data["pvcs"].extend(self._extract_items(content))
             except Exception as e:
                 logger.warning("Error scanning YAML %s: %s", yaml_file, e)
 

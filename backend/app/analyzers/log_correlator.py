@@ -205,6 +205,106 @@ class LogCorrelator:
                 },
             ))
 
+        # Add StatefulSets
+        for sts in parsed_data.get("statefulsets", []):
+            meta = sts.get("metadata", {})
+            name = meta.get("name", "unknown")
+            ns = meta.get("namespace", "default")
+            sts_id = f"statefulset/{ns}/{name}"
+            if sts_id in seen_ids:
+                continue
+            seen_ids.add(sts_id)
+
+            desired = sts.get("spec", {}).get("replicas", 0) or 0
+            ready = sts.get("status", {}).get("readyReplicas", 0) or 0
+            sts_status = "healthy"
+            if desired > 0 and ready == 0:
+                sts_status = "critical"
+            elif ready < desired:
+                sts_status = "warning"
+
+            topo_nodes.append(TopologyNode(
+                id=sts_id,
+                label=name,
+                type="statefulset",
+                status=sts_status,
+                namespace=ns,
+                metadata={"replicas": desired, "readyReplicas": ready},
+            ))
+
+        # Add DaemonSets
+        for ds in parsed_data.get("daemonsets", []):
+            meta = ds.get("metadata", {})
+            name = meta.get("name", "unknown")
+            ns = meta.get("namespace", "default")
+            ds_id = f"daemonset/{ns}/{name}"
+            if ds_id in seen_ids:
+                continue
+            seen_ids.add(ds_id)
+
+            desired = ds.get("status", {}).get("desiredNumberScheduled", 0) or 0
+            ready = ds.get("status", {}).get("numberReady", 0) or 0
+            ds_status = "healthy"
+            if desired > 0 and ready == 0:
+                ds_status = "critical"
+            elif ready < desired:
+                ds_status = "warning"
+
+            topo_nodes.append(TopologyNode(
+                id=ds_id,
+                label=name,
+                type="daemonset",
+                status=ds_status,
+                namespace=ns,
+                metadata={"desired": desired, "ready": ready},
+            ))
+
+        # Add Jobs
+        for job in parsed_data.get("jobs", []):
+            meta = job.get("metadata", {})
+            name = meta.get("name", "unknown")
+            ns = meta.get("namespace", "default")
+            job_id = f"job/{ns}/{name}"
+            if job_id in seen_ids:
+                continue
+            seen_ids.add(job_id)
+
+            failed = job.get("status", {}).get("failed", 0) or 0
+            succeeded = job.get("status", {}).get("succeeded", 0) or 0
+            job_status = "healthy"
+            if failed > 0:
+                job_status = "critical"
+            elif succeeded == 0:
+                job_status = "warning"
+
+            topo_nodes.append(TopologyNode(
+                id=job_id,
+                label=name,
+                type="job",
+                status=job_status,
+                namespace=ns,
+                metadata={"succeeded": succeeded, "failed": failed},
+            ))
+
+        # Add Ingresses
+        for ing in parsed_data.get("ingresses", []):
+            meta = ing.get("metadata", {})
+            name = meta.get("name", "unknown")
+            ns = meta.get("namespace", "default")
+            ing_id = f"ingress/{ns}/{name}"
+            if ing_id in seen_ids:
+                continue
+            seen_ids.add(ing_id)
+
+            topo_nodes.append(TopologyNode(
+                id=ing_id,
+                label=name,
+                type="ingress",
+                status="healthy",
+                namespace=ns,
+                metadata={},
+            ))
+
         # Add pods and create edges
         for pod in parsed_data.get("pods", []):
             meta = pod.get("metadata", {})
@@ -256,6 +356,30 @@ class LogCorrelator:
                                 target=pod_id,
                                 label="owns",
                             ))
+                elif owner_kind == "StatefulSet":
+                    sts_id = f"statefulset/{ns}/{owner_name}"
+                    if sts_id in seen_ids:
+                        topo_edges.append(TopologyEdge(
+                            source=sts_id,
+                            target=pod_id,
+                            label="owns",
+                        ))
+                elif owner_kind == "DaemonSet":
+                    ds_id = f"daemonset/{ns}/{owner_name}"
+                    if ds_id in seen_ids:
+                        topo_edges.append(TopologyEdge(
+                            source=ds_id,
+                            target=pod_id,
+                            label="owns",
+                        ))
+                elif owner_kind == "Job":
+                    job_id = f"job/{ns}/{owner_name}"
+                    if job_id in seen_ids:
+                        topo_edges.append(TopologyEdge(
+                            source=job_id,
+                            target=pod_id,
+                            label="owns",
+                        ))
 
         # Edge: service -> pod (selector matching)
         for svc in parsed_data.get("services", []):
@@ -283,6 +407,25 @@ class LogCorrelator:
                         target=pod_id,
                         label="selects",
                     ))
+
+        # Edge: ingress -> service (backend)
+        for ing in parsed_data.get("ingresses", []):
+            ing_meta = ing.get("metadata", {})
+            ing_name = ing_meta.get("name", "unknown")
+            ing_ns = ing_meta.get("namespace", "default")
+            ing_id = f"ingress/{ing_ns}/{ing_name}"
+
+            for rule in ing.get("spec", {}).get("rules", []) or []:
+                for path_entry in (rule.get("http", {}) or {}).get("paths", []) or []:
+                    backend = path_entry.get("backend", {})
+                    svc_name = backend.get("service", {}).get("name", backend.get("serviceName", ""))
+                    if svc_name:
+                        svc_id = f"service/{ing_ns}/{svc_name}"
+                        topo_edges.append(TopologyEdge(
+                            source=ing_id,
+                            target=svc_id,
+                            label="routes",
+                        ))
 
         logger.info("Built topology: %d nodes, %d edges", len(topo_nodes), len(topo_edges))
         return topo_nodes, topo_edges
@@ -428,6 +571,57 @@ class LogCorrelator:
 
             dots.append(ResourceHealthDot(
                 id=svc_id, name=name, type="service", namespace=ns, status="healthy",
+            ))
+
+        # StatefulSets
+        for sts in parsed_data.get("statefulsets", []):
+            meta = sts.get("metadata", {})
+            name = meta.get("name", "unknown")
+            ns = meta.get("namespace", "default")
+            sts_id = f"statefulset/{ns}/{name}"
+            desired = sts.get("spec", {}).get("replicas", 0) or 0
+            ready = sts.get("status", {}).get("readyReplicas", 0) or 0
+            status = "healthy"
+            if desired > 0 and ready == 0:
+                status = "critical"
+            elif ready < desired:
+                status = "warning"
+            dots.append(ResourceHealthDot(
+                id=sts_id, name=name, type="statefulset", namespace=ns, status=status,
+            ))
+
+        # DaemonSets
+        for ds in parsed_data.get("daemonsets", []):
+            meta = ds.get("metadata", {})
+            name = meta.get("name", "unknown")
+            ns = meta.get("namespace", "default")
+            ds_id = f"daemonset/{ns}/{name}"
+            desired = ds.get("status", {}).get("desiredNumberScheduled", 0) or 0
+            ready = ds.get("status", {}).get("numberReady", 0) or 0
+            status = "healthy"
+            if desired > 0 and ready == 0:
+                status = "critical"
+            elif ready < desired:
+                status = "warning"
+            dots.append(ResourceHealthDot(
+                id=ds_id, name=name, type="daemonset", namespace=ns, status=status,
+            ))
+
+        # Jobs
+        for job in parsed_data.get("jobs", []):
+            meta = job.get("metadata", {})
+            name = meta.get("name", "unknown")
+            ns = meta.get("namespace", "default")
+            job_id = f"job/{ns}/{name}"
+            failed = job.get("status", {}).get("failed", 0) or 0
+            succeeded = job.get("status", {}).get("succeeded", 0) or 0
+            status = "healthy"
+            if failed > 0:
+                status = "critical"
+            elif succeeded == 0:
+                status = "warning"
+            dots.append(ResourceHealthDot(
+                id=job_id, name=name, type="job", namespace=ns, status=status,
             ))
 
         logger.info("Built %d resource health dots", len(dots))

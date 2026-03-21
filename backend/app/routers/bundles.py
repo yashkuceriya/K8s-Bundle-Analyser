@@ -772,14 +772,13 @@ def _compute_cluster_health(parsed_data: dict[str, Any], issues: list[Issue]) ->
     warning_count = sum(1 for i in issues if i.severity == Severity.warning)
     info_count = sum(1 for i in issues if i.severity == Severity.info)
 
-    # Honest health score — reflects real cluster state
     total_pods = len(pods)
     running_pods = sum(
         1 for p in pods
         if p.get("status", {}).get("phase") in ("Running", "Succeeded")
     )
 
-    # Node health: are all nodes Ready?
+    # Node health
     ready_nodes = sum(
         1 for n in nodes
         if any(
@@ -787,22 +786,58 @@ def _compute_cluster_health(parsed_data: dict[str, Any], issues: list[Issue]) ->
             for c in n.get("status", {}).get("conditions", [])
         )
     )
-    node_health = (ready_nodes / len(nodes) * 100) if nodes else 100
+    node_ratio = (ready_nodes / len(nodes)) if nodes else 1.0
+
+    # Workload readiness: Deployments + StatefulSets + DaemonSets
+    total_desired = 0
+    total_ready = 0
+    for deploy in parsed_data.get("deployments", []):
+        d = deploy.get("status", {}).get("replicas", 0) or 0
+        r = deploy.get("status", {}).get("readyReplicas", 0) or 0
+        total_desired += d
+        total_ready += r
+    for sts in parsed_data.get("statefulsets", []):
+        d = sts.get("spec", {}).get("replicas", 0) or 0
+        r = sts.get("status", {}).get("readyReplicas", 0) or 0
+        total_desired += d
+        total_ready += r
+    for ds in parsed_data.get("daemonsets", []):
+        d = ds.get("status", {}).get("desiredNumberScheduled", 0) or 0
+        r = ds.get("status", {}).get("numberReady", 0) or 0
+        total_desired += d
+        total_ready += r
+    workload_ratio = (total_ready / total_desired) if total_desired > 0 else 1.0
+
+    # Stability: restart velocity + warning event frequency
+    total_restarts = 0
+    for pod in pods:
+        for cs in pod.get("status", {}).get("containerStatuses", []) or []:
+            total_restarts += cs.get("restartCount", 0)
+    events = parsed_data.get("events", [])
+    warning_events = sum(1 for e in events if e.get("type") == "Warning")
+    # Normalize: 0 restarts & 0 warnings = 1.0, scale down from there
+    restart_penalty = min(1.0, total_restarts / max(total_pods * 10, 1))
+    event_penalty = min(1.0, warning_events / max(total_pods * 5, 1))
+    stability = 1.0 - (restart_penalty * 0.5 + event_penalty * 0.5)
 
     if total_pods > 0:
-        # Pod health is the primary signal (60% weight)
         pod_ratio = running_pods / total_pods
-        pod_score = pod_ratio * 60
 
-        # Node health (20% weight)
-        node_score = (node_health / 100) * 20
+        # Weighted formula:
+        # 40% pod health, 15% node health, 15% workload readiness,
+        # 15% issue penalty, 15% stability
+        pod_score = pod_ratio * 40
+        node_score = node_ratio * 15
+        workload_score = workload_ratio * 15
 
-        # Issue penalty (20% weight) — critical issues hurt more
-        max_penalty = 20
-        penalty = min(max_penalty, critical_count * 5 + warning_count * 1.5)
-        issue_score = max_penalty - penalty
+        # Issue penalty: critical issues hurt more
+        max_issue_penalty = 15
+        issue_penalty = min(max_issue_penalty, critical_count * 4 + warning_count * 1.5)
+        issue_score = max_issue_penalty - issue_penalty
 
-        score = int(max(0, min(100, pod_score + node_score + issue_score)))
+        stability_score = stability * 15
+
+        score = int(max(0, min(100, pod_score + node_score + workload_score + issue_score + stability_score)))
     else:
         score = 0 if critical_count > 0 else 50
 

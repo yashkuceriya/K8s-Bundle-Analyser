@@ -175,6 +175,16 @@ def healthy_cluster_data():
         "deployments": [],
         "services": [],
         "pvs": [],
+        "storage_classes": [],
+        "statefulsets": [],
+        "daemonsets": [],
+        "jobs": [],
+        "cronjobs": [],
+        "ingresses": [],
+        "hpas": [],
+        "configmaps": [],
+        "replicasets": [],
+        "pvcs": [],
         "cluster_version": {"gitVersion": "v1.28.4"},
         "host_info": {},
     }
@@ -194,4 +204,173 @@ def warning_event():
         },
         "count": 5,
         "lastTimestamp": "2024-01-15T10:00:00Z",
+    }
+
+
+@pytest.fixture
+def probe_failure_event():
+    """An Unhealthy probe event."""
+    return {
+        "type": "Warning",
+        "reason": "Unhealthy",
+        "message": "Liveness probe failed: HTTP probe failed with statuscode: 503",
+        "involvedObject": {
+            "kind": "Pod",
+            "name": "web-app-abc123",
+            "namespace": "production",
+        },
+        "count": 12,
+        "lastTimestamp": "2024-01-15T10:30:00Z",
+    }
+
+
+@pytest.fixture
+def failed_job():
+    """A failed Kubernetes Job."""
+    return {
+        "metadata": {"name": "data-migration-xyz", "namespace": "batch"},
+        "status": {
+            "failed": 3,
+            "conditions": [
+                {
+                    "type": "Failed",
+                    "status": "True",
+                    "reason": "BackoffLimitExceeded",
+                    "message": "Job has reached the specified backoff limit",
+                }
+            ],
+        },
+    }
+
+
+@pytest.fixture
+def suspended_cronjob():
+    """A suspended CronJob."""
+    return {
+        "metadata": {"name": "nightly-backup", "namespace": "ops"},
+        "spec": {"schedule": "0 2 * * *", "suspend": True},
+        "status": {},
+    }
+
+
+@pytest.fixture
+def stuck_statefulset():
+    """A StatefulSet with stuck rollout."""
+    return {
+        "metadata": {"name": "postgres-cluster", "namespace": "database"},
+        "spec": {"replicas": 3},
+        "status": {
+            "readyReplicas": 1,
+            "currentReplicas": 2,
+            "updatedReplicas": 1,
+        },
+    }
+
+
+@pytest.fixture
+def maxed_hpa():
+    """An HPA at max replicas."""
+    return {
+        "metadata": {"name": "api-hpa", "namespace": "production"},
+        "spec": {"maxReplicas": 10},
+        "status": {
+            "currentReplicas": 10,
+            "conditions": [
+                {
+                    "type": "ScalingLimited",
+                    "status": "True",
+                    "message": "the desired replica count is more than the maximum replica count",
+                }
+            ],
+        },
+    }
+
+
+@pytest.fixture
+def ingress_bad_backend():
+    """An Ingress pointing to a non-existent service."""
+    return {
+        "metadata": {"name": "app-ingress", "namespace": "web"},
+        "spec": {
+            "rules": [
+                {
+                    "host": "app.example.com",
+                    "http": {
+                        "paths": [
+                            {
+                                "path": "/api",
+                                "backend": {
+                                    "service": {"name": "api-service-v2", "port": {"number": 80}},
+                                },
+                            }
+                        ]
+                    },
+                }
+            ]
+        },
+    }
+
+
+@pytest.fixture
+def service_no_endpoints():
+    """A service whose selector matches zero pods."""
+    return {
+        "metadata": {"name": "orphan-svc", "namespace": "staging"},
+        "spec": {
+            "type": "ClusterIP",
+            "selector": {"app": "nonexistent-app"},
+        },
+    }
+
+
+@pytest.fixture
+def pod_no_limits():
+    """A running pod with no resource limits."""
+    return {
+        "metadata": {"name": "app-xyz", "namespace": "default"},
+        "spec": {
+            "containers": [
+                {"name": "app", "image": "app:latest", "resources": {}},
+            ],
+        },
+        "status": {"phase": "Running"},
+    }
+
+
+@pytest.fixture
+def init_container_crash_pod():
+    """A pod with a crashing init container."""
+    return {
+        "metadata": {"name": "app-with-init-abc", "namespace": "production"},
+        "status": {
+            "phase": "Pending",
+            "initContainerStatuses": [
+                {
+                    "name": "db-init",
+                    "state": {
+                        "waiting": {
+                            "reason": "CrashLoopBackOff",
+                            "message": "back-off 5m0s restarting failed container",
+                        }
+                    },
+                }
+            ],
+        },
+    }
+
+
+@pytest.fixture
+def rbac_forbidden_event():
+    """A Forbidden RBAC event."""
+    return {
+        "type": "Warning",
+        "reason": "Forbidden",
+        "message": "User system:serviceaccount:default:my-app cannot list resource \"secrets\" in namespace \"kube-system\"",
+        "involvedObject": {
+            "kind": "ServiceAccount",
+            "name": "my-app",
+            "namespace": "default",
+        },
+        "count": 3,
+        "lastTimestamp": "2024-01-15T11:00:00Z",
     }

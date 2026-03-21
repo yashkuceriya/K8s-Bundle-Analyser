@@ -1,4 +1,4 @@
-"""Tests for the heuristic analyzer — verifies all 15 pattern detectors."""
+"""Tests for the heuristic analyzer — verifies all 25 pattern detectors."""
 import pytest
 
 from app.analyzers.heuristic import HeuristicAnalyzer
@@ -191,3 +191,277 @@ class TestMultipleIssues:
     def test_healthy_cluster_has_no_issues(self, healthy_cluster_data):
         issues = HeuristicAnalyzer(healthy_cluster_data).analyze()
         assert len(issues) == 0
+
+
+class TestProbeFailures:
+    def test_detects_liveness_probe_failure(self, probe_failure_event):
+        data = {"pods": [], "nodes": [], "events": [probe_failure_event], "logs": [],
+                "jobs": [], "cronjobs": [], "statefulsets": [], "hpas": [],
+                "ingresses": [], "services": []}
+        issues = HeuristicAnalyzer(data).analyze()
+        probes = [i for i in issues if "Probe failure" in i.title]
+        assert len(probes) == 1
+        assert probes[0].severity.value == "critical"  # liveness probe
+        assert probes[0].category == "pod-health"
+        assert "web-app" in probes[0].title
+        # Verify no duplicate from _check_failed_events
+        unhealthy_events = [i for i in issues if "Unhealthy" in i.title and "Probe" not in i.title]
+        assert len(unhealthy_events) == 0
+
+    def test_readiness_probe_is_warning(self):
+        event = {
+            "type": "Warning",
+            "reason": "Unhealthy",
+            "message": "Readiness probe failed: connection refused",
+            "involvedObject": {"kind": "Pod", "name": "api-pod", "namespace": "ns"},
+            "count": 5,
+        }
+        data = {"pods": [], "nodes": [], "events": [event], "logs": [],
+                "jobs": [], "cronjobs": [], "statefulsets": [], "hpas": [],
+                "ingresses": [], "services": []}
+        issues = HeuristicAnalyzer(data).analyze()
+        probes = [i for i in issues if "Probe failure" in i.title]
+        assert len(probes) == 1
+        assert probes[0].severity.value == "warning"
+
+    def test_deduplicates_multiple_events_per_pod(self):
+        """Multiple Unhealthy events for the same pod should produce one issue."""
+        events = [
+            {
+                "type": "Warning", "reason": "Unhealthy",
+                "message": "Liveness probe failed: timeout", "count": 3,
+                "involvedObject": {"kind": "Pod", "name": "api-pod", "namespace": "ns"},
+            },
+            {
+                "type": "Warning", "reason": "Unhealthy",
+                "message": "Readiness probe failed: 503", "count": 7,
+                "involvedObject": {"kind": "Pod", "name": "api-pod", "namespace": "ns"},
+            },
+        ]
+        data = {"pods": [], "nodes": [], "events": events, "logs": [],
+                "jobs": [], "cronjobs": [], "statefulsets": [], "hpas": [],
+                "ingresses": [], "services": []}
+        issues = HeuristicAnalyzer(data).analyze()
+        probes = [i for i in issues if "Probe failure" in i.title]
+        assert len(probes) == 1
+        # Should be critical because one of the events is liveness
+        assert probes[0].severity.value == "critical"
+
+
+class TestJobFailures:
+    def test_detects_failed_job(self, failed_job):
+        data = {"pods": [], "nodes": [], "events": [], "logs": [],
+                "jobs": [failed_job], "cronjobs": [], "statefulsets": [], "hpas": [],
+                "ingresses": [], "services": []}
+        issues = HeuristicAnalyzer(data).analyze()
+        jobs = [i for i in issues if "Job failed" in i.title]
+        assert len(jobs) == 1
+        assert jobs[0].severity.value == "warning"
+        assert "data-migration" in jobs[0].title
+
+    def test_successful_job_no_issue(self):
+        job = {
+            "metadata": {"name": "ok-job", "namespace": "batch"},
+            "status": {"succeeded": 1, "failed": 0},
+        }
+        data = {"pods": [], "nodes": [], "events": [], "logs": [],
+                "jobs": [job], "cronjobs": [], "statefulsets": [], "hpas": [],
+                "ingresses": [], "services": []}
+        issues = HeuristicAnalyzer(data).analyze()
+        jobs = [i for i in issues if "Job failed" in i.title]
+        assert len(jobs) == 0
+
+
+class TestCronJobIssues:
+    def test_detects_suspended_cronjob(self, suspended_cronjob):
+        data = {"pods": [], "nodes": [], "events": [], "logs": [],
+                "jobs": [], "cronjobs": [suspended_cronjob], "statefulsets": [], "hpas": [],
+                "ingresses": [], "services": []}
+        issues = HeuristicAnalyzer(data).analyze()
+        cj = [i for i in issues if "CronJob issue" in i.title]
+        assert len(cj) == 1
+        assert "suspended" in cj[0].description.lower()
+
+
+class TestStatefulSetStuckRollout:
+    def test_detects_stuck_statefulset(self, stuck_statefulset):
+        data = {"pods": [], "nodes": [], "events": [], "logs": [],
+                "jobs": [], "cronjobs": [], "statefulsets": [stuck_statefulset], "hpas": [],
+                "ingresses": [], "services": []}
+        issues = HeuristicAnalyzer(data).analyze()
+        sts = [i for i in issues if "StatefulSet degraded" in i.title]
+        assert len(sts) == 1
+        assert "1/3" in sts[0].title
+        assert sts[0].severity.value == "warning"
+
+    def test_healthy_statefulset_no_issue(self):
+        sts = {
+            "metadata": {"name": "healthy-sts", "namespace": "default"},
+            "spec": {"replicas": 3},
+            "status": {"readyReplicas": 3, "currentReplicas": 3, "updatedReplicas": 3},
+        }
+        data = {"pods": [], "nodes": [], "events": [], "logs": [],
+                "jobs": [], "cronjobs": [], "statefulsets": [sts], "hpas": [],
+                "ingresses": [], "services": []}
+        issues = HeuristicAnalyzer(data).analyze()
+        sts_issues = [i for i in issues if "StatefulSet" in i.title]
+        assert len(sts_issues) == 0
+
+    def test_zero_ready_is_critical(self):
+        sts = {
+            "metadata": {"name": "down-sts", "namespace": "db"},
+            "spec": {"replicas": 3},
+            "status": {"readyReplicas": 0, "currentReplicas": 0, "updatedReplicas": 0},
+        }
+        data = {"pods": [], "nodes": [], "events": [], "logs": [],
+                "jobs": [], "cronjobs": [], "statefulsets": [sts], "hpas": [],
+                "ingresses": [], "services": []}
+        issues = HeuristicAnalyzer(data).analyze()
+        sts_issues = [i for i in issues if "StatefulSet degraded" in i.title]
+        assert len(sts_issues) == 1
+        assert sts_issues[0].severity.value == "critical"
+
+
+class TestHPAScalingIssues:
+    def test_detects_maxed_hpa(self, maxed_hpa):
+        data = {"pods": [], "nodes": [], "events": [], "logs": [],
+                "jobs": [], "cronjobs": [], "statefulsets": [], "hpas": [maxed_hpa],
+                "ingresses": [], "services": []}
+        issues = HeuristicAnalyzer(data).analyze()
+        hpa = [i for i in issues if "HPA scaling" in i.title]
+        assert len(hpa) == 1
+        assert hpa[0].severity.value == "warning"
+        assert "10/10" in hpa[0].evidence[0]
+
+
+class TestIngressMisconfiguration:
+    def test_detects_bad_backend(self, ingress_bad_backend):
+        data = {"pods": [], "nodes": [], "events": [], "logs": [],
+                "jobs": [], "cronjobs": [], "statefulsets": [], "hpas": [],
+                "ingresses": [ingress_bad_backend], "services": []}
+        issues = HeuristicAnalyzer(data).analyze()
+        ing = [i for i in issues if "Ingress bad backend" in i.title]
+        assert len(ing) == 1
+        assert "api-service-v2" in ing[0].description
+
+    def test_valid_ingress_no_issue(self):
+        ingress = {
+            "metadata": {"name": "ok-ingress", "namespace": "web"},
+            "spec": {
+                "rules": [{
+                    "host": "app.example.com",
+                    "http": {
+                        "paths": [{
+                            "path": "/",
+                            "backend": {"service": {"name": "web-svc", "port": {"number": 80}}},
+                        }]
+                    },
+                }]
+            },
+        }
+        svc = {
+            "metadata": {"name": "web-svc", "namespace": "web"},
+            "spec": {"type": "ClusterIP"},
+        }
+        data = {"pods": [], "nodes": [], "events": [], "logs": [],
+                "jobs": [], "cronjobs": [], "statefulsets": [], "hpas": [],
+                "ingresses": [ingress], "services": [svc]}
+        issues = HeuristicAnalyzer(data).analyze()
+        ing = [i for i in issues if "Ingress bad backend" in i.title]
+        assert len(ing) == 0
+
+
+class TestServiceSelectorMismatch:
+    def test_detects_service_with_no_matching_pods(self, service_no_endpoints):
+        data = {"pods": [], "nodes": [], "events": [], "logs": [],
+                "jobs": [], "cronjobs": [], "statefulsets": [], "hpas": [],
+                "ingresses": [], "services": [service_no_endpoints]}
+        issues = HeuristicAnalyzer(data).analyze()
+        svc = [i for i in issues if "no endpoints" in i.title.lower()]
+        assert len(svc) == 1
+        assert svc[0].severity.value == "warning"
+        assert "nonexistent-app" in svc[0].description
+
+    def test_service_with_matching_pods_no_issue(self):
+        svc = {
+            "metadata": {"name": "good-svc", "namespace": "default"},
+            "spec": {"type": "ClusterIP", "selector": {"app": "myapp"}},
+        }
+        pod = {
+            "metadata": {"name": "myapp-abc", "namespace": "default", "labels": {"app": "myapp"}},
+            "status": {"phase": "Running"},
+        }
+        data = {"pods": [pod], "nodes": [], "events": [], "logs": [],
+                "jobs": [], "cronjobs": [], "statefulsets": [], "hpas": [],
+                "ingresses": [], "services": [svc]}
+        issues = HeuristicAnalyzer(data).analyze()
+        svc_issues = [i for i in issues if "no endpoints" in i.title.lower()]
+        assert len(svc_issues) == 0
+
+
+class TestMissingResourceLimits:
+    def test_detects_missing_limits(self, pod_no_limits):
+        data = {"pods": [pod_no_limits], "nodes": [], "events": [], "logs": [],
+                "jobs": [], "cronjobs": [], "statefulsets": [], "hpas": [],
+                "ingresses": [], "services": []}
+        issues = HeuristicAnalyzer(data).analyze()
+        limits = [i for i in issues if "Missing resource limits" in i.title]
+        assert len(limits) == 1
+        assert limits[0].severity.value == "info"
+        assert limits[0].category == "configuration"
+
+    def test_pod_with_limits_no_issue(self):
+        pod = {
+            "metadata": {"name": "good-pod", "namespace": "default"},
+            "spec": {
+                "containers": [
+                    {
+                        "name": "app",
+                        "resources": {
+                            "requests": {"cpu": "100m", "memory": "128Mi"},
+                            "limits": {"cpu": "500m", "memory": "512Mi"},
+                        },
+                    }
+                ]
+            },
+            "status": {"phase": "Running"},
+        }
+        data = {"pods": [pod], "nodes": [], "events": [], "logs": [],
+                "jobs": [], "cronjobs": [], "statefulsets": [], "hpas": [],
+                "ingresses": [], "services": []}
+        issues = HeuristicAnalyzer(data).analyze()
+        limits = [i for i in issues if "Missing resource limits" in i.title]
+        assert len(limits) == 0
+
+
+class TestInitContainerFailures:
+    def test_detects_init_container_crash(self, init_container_crash_pod):
+        data = {"pods": [init_container_crash_pod], "nodes": [], "events": [], "logs": [],
+                "jobs": [], "cronjobs": [], "statefulsets": [], "hpas": [],
+                "ingresses": [], "services": []}
+        issues = HeuristicAnalyzer(data).analyze()
+        init = [i for i in issues if "Init container failed" in i.title]
+        assert len(init) == 1
+        assert init[0].severity.value == "critical"
+        assert "db-init" in init[0].title
+
+
+class TestRBACFailures:
+    def test_detects_rbac_forbidden(self, rbac_forbidden_event):
+        data = {"pods": [], "nodes": [], "events": [rbac_forbidden_event], "logs": [],
+                "jobs": [], "cronjobs": [], "statefulsets": [], "hpas": [],
+                "ingresses": [], "services": []}
+        issues = HeuristicAnalyzer(data).analyze()
+        rbac = [i for i in issues if "RBAC" in i.title]
+        assert len(rbac) == 1
+        assert rbac[0].severity.value == "warning"
+        assert rbac[0].category == "security"
+
+    def test_no_rbac_issues_on_clean_events(self):
+        event = {"type": "Normal", "reason": "Created", "message": "Created pod"}
+        data = {"pods": [], "nodes": [], "events": [event], "logs": [],
+                "jobs": [], "cronjobs": [], "statefulsets": [], "hpas": [],
+                "ingresses": [], "services": []}
+        issues = HeuristicAnalyzer(data).analyze()
+        rbac = [i for i in issues if "RBAC" in i.title]
+        assert len(rbac) == 0

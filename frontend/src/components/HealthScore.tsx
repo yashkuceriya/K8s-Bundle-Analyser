@@ -7,20 +7,20 @@ interface HealthScoreProps {
 }
 
 export default function HealthScore({ score, size = 160, trend }: HealthScoreProps) {
-  const { color, bgColor, label } = useMemo(() => {
-    if (score > 70) return { color: '#06b6d4', bgColor: 'rgba(6,182,212,0.12)', label: 'Healthy' };
-    if (score > 40) return { color: '#f59e0b', bgColor: 'rgba(245,158,11,0.12)', label: 'Degraded' };
-    return { color: '#ef4444', bgColor: 'rgba(239,68,68,0.12)', label: 'Critical' };
+  const { color, label } = useMemo(() => {
+    if (score > 70) return { color: '#10b981', label: 'EXCELLENT' };
+    if (score > 40) return { color: '#f59e0b', label: 'MODERATE' };
+    return { color: '#ef4444', label: 'CRITICAL' };
   }, [score]);
 
-  const strokeWidth = 10;
+  const strokeWidth = size >= 100 ? 12 : size >= 60 ? 8 : 6;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const progress = (score / 100) * circumference;
 
-  const displayScore = Number.isInteger(score) ? `${score}%` : `${score.toFixed(1)}%`;
+  const fontSize = size >= 100 ? 'text-5xl' : size >= 60 ? 'text-xl' : 'text-sm';
+  const labelSize = size >= 100 ? 'text-xs' : 'text-[8px]';
 
-  // Mini sparkline SVG path from trend data
   const sparklinePath = useMemo(() => {
     if (!trend || trend.length < 2) return null;
     const w = size * 0.7;
@@ -35,7 +35,6 @@ export default function HealthScore({ score, size = 160, trend }: HealthScorePro
 
   return (
     <div className="flex flex-col items-center gap-1">
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">System Health</p>
       <div className="relative" style={{ width: size, height: size }}>
         <svg width={size} height={size} className="-rotate-90">
           <circle
@@ -57,33 +56,24 @@ export default function HealthScore({ score, size = 160, trend }: HealthScorePro
             strokeDashoffset={circumference - progress}
             strokeLinecap="round"
             className="transition-all duration-1000 ease-out"
-            style={{ filter: `drop-shadow(0 0 6px ${color}40)` }}
+            style={{ filter: `drop-shadow(0 0 8px ${color}50)` }}
           />
         </svg>
-        <div
-          className="absolute inset-0 flex flex-col items-center justify-center rounded-full"
-          style={{ backgroundColor: bgColor }}
-        >
-          <span className="text-4xl font-bold tracking-tight" style={{ color }}>
-            {displayScore}
+        <div className="absolute inset-0 flex flex-col items-center justify-center rounded-full">
+          <span className={`${fontSize} font-bold tracking-tight text-white`}>
+            {Math.round(score)}
           </span>
-          <span className="text-xs text-gray-400 font-medium mt-0.5">{label}</span>
+          {size >= 60 && (
+            <span className={`${labelSize} font-bold tracking-wider mt-0.5`} style={{ color }}>
+              {label}
+            </span>
+          )}
         </div>
       </div>
-      {/* Trend sparkline */}
       {sparklinePath && (
         <div className="flex flex-col items-center -mt-1">
           <svg width={sparklinePath.w} height={sparklinePath.h} className="overflow-visible">
-            <path
-              d={sparklinePath.d}
-              fill="none"
-              stroke={color}
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              opacity="0.6"
-            />
-            {/* Last point dot */}
+            <path d={sparklinePath.d} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.6" />
             {trend && trend.length > 0 && (() => {
               const w = sparklinePath.w;
               const h = sparklinePath.h;

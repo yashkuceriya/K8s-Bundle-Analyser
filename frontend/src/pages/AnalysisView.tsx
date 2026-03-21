@@ -25,6 +25,9 @@ import {
   Loader2,
   RefreshCw,
   HelpCircle,
+  Sparkles,
+  CheckCircle,
+  AlertCircle,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import clsx from 'clsx';
@@ -32,6 +35,7 @@ import Navbar from '../components/Navbar';
 import LoadingSpinner from '../components/LoadingSpinner';
 import SeverityBadge from '../components/SeverityBadge';
 import IssueCard from '../components/IssueCard';
+import HealthScore from '../components/HealthScore';
 const ClusterMap = lazy(() => import('../components/ClusterMap'));
 import ClusterHealthGrid from '../components/ClusterHealthGrid';
 import LogCorrelationView from '../components/LogCorrelationView';
@@ -192,59 +196,62 @@ export default function AnalysisView() {
 
       <div className="flex flex-1">
         {/* Left Sidebar */}
-        <aside className="w-60 shrink-0 bg-navy-800 border-r border-navy-700 flex flex-col">
+        <aside className="w-56 shrink-0 bg-navy-800 border-r border-navy-700 flex flex-col">
           {/* Bundle Info */}
-          <div className="p-5 border-b border-navy-700">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-9 h-9 bg-accent-blue/20 rounded-lg flex items-center justify-center">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-accent-blue">
+          <div className="p-4 border-b border-navy-700">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-accent-blue/15 rounded-xl flex items-center justify-center">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent-blue">
                   <path d="M12 2L2 7l10 5 10-5-10-5z" />
                   <path d="M2 17l10 5 10-5" />
                   <path d="M2 12l10 5 10-5" />
                 </svg>
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-white truncate">{bundle?.filename || 'Bundle'}</p>
-                <p className="text-[10px] text-gray-500 uppercase tracking-wider">Health Score: {analysis.cluster_health.score}</p>
+                <p className="text-sm font-bold text-white truncate">{bundle?.filename?.replace('.tar.gz', '') || 'Bundle'}</p>
+                <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Health Score: {analysis.cluster_health.score}</p>
               </div>
             </div>
           </div>
 
           {/* Navigation */}
-          <div className="flex-1 p-3 space-y-1">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={clsx(
-                  'sidebar-item w-full',
-                  activeTab === tab.id ? 'sidebar-item-active' : 'sidebar-item-inactive'
-                )}
-              >
-                {tab.icon}
-                {tab.label}
-              </button>
-            ))}
+          <div className="flex-1 py-4 px-2">
+            <p className="px-4 mb-2 text-[10px] font-semibold text-gray-600 uppercase tracking-widest">Analysis Hub</p>
+            <div className="space-y-0.5">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={clsx(
+                    'sidebar-item w-full',
+                    activeTab === tab.id ? 'sidebar-item-active' : 'sidebar-item-inactive'
+                  )}
+                >
+                  {tab.icon}
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          {/* Re-analyze Button */}
-          <div className="p-3 space-y-3">
+          {/* Bottom Actions */}
+          <div className="p-3 space-y-3 border-t border-navy-700">
             <button
               onClick={handleReanalyze}
               disabled={isReanalyzing}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-accent-blue hover:bg-blue-600 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-accent-blue hover:bg-blue-600 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition-colors disabled:opacity-50"
             >
-              {isReanalyzing ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+              {isReanalyzing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
               Re-analyze Bundle
             </button>
 
-            <div className="border-t border-navy-700 pt-3 space-y-1">
+            <div className="space-y-0.5">
               <button className="sidebar-item sidebar-item-inactive w-full">
-                <FileText size={18} />
+                <FileText size={16} />
                 Docs
               </button>
               <button className="sidebar-item sidebar-item-inactive w-full">
-                <HelpCircle size={18} />
+                <HelpCircle size={16} />
                 Support
               </button>
             </div>
@@ -471,205 +478,166 @@ function OverviewTab({
   };
 
   return (
-    <div className="space-y-6 max-w-screen-xl">
-      {/* Stats Row */}
-      <div className="grid grid-cols-4 gap-4">
-        <StatCardNew
-          label="SYSTEM HEALTH"
-          value={`${health.score}%`}
-          color="#06b6d4"
-          progress={health.score}
-          subtitle={health.score > 70 ? 'Healthy' : health.score > 40 ? 'Degraded' : 'Critical'}
-        />
-        <StatCardNew
-          label="CRITICAL ISSUES"
-          value={String(health.critical_count)}
-          color="#ef4444"
-          progress={health.critical_count > 0 ? Math.min(100, health.critical_count * 20) : 0}
-          subtitle={`across ${health.namespace_count} namespaces`}
-          trend={health.critical_count > 0 ? 'up' : undefined}
-        />
-        <StatCardNew
-          label="WARNINGS"
-          value={String(health.warning_count)}
-          color="#f59e0b"
-          progress={health.warning_count > 0 ? Math.min(100, health.warning_count * 15) : 0}
-          subtitle={`${health.pod_count} pods monitored`}
-          trend={health.warning_count > 0 ? 'up' : undefined}
-        />
-        <StatCardNew
-          label="LOG VOLUME"
-          value={String(analysis.log_entries?.length ?? 0)}
-          color="#06b6d4"
-          progress={Math.min(100, ((analysis.log_entries?.length ?? 0) / 200) * 100)}
-          subtitle="entries analyzed"
-          valueLabel="entries"
-        />
-      </div>
-
-      {/* Health Trend + Issue Breakdown Row */}
-      {historyData.length > 1 && (
+    <div className="flex gap-6 max-w-screen-2xl">
+      {/* Left Column - Health Metrics */}
+      <div className="w-[340px] shrink-0 space-y-5">
+        {/* Cluster Health */}
         <div className="bg-navy-800 border border-navy-700 rounded-xl p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <div className="w-8 h-8 bg-[#06b6d4]/20 rounded-lg flex items-center justify-center">
-              <Activity size={18} className="text-[#06b6d4]" />
-            </div>
-            <h3 className="text-base font-semibold text-white">Health Score Trend</h3>
-            <span className="text-xs text-gray-500 ml-2">{historyData.length} analysis runs</span>
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-6">Cluster Health</h3>
+          <div className="flex justify-center">
+            <HealthScore score={health.score} size={200} trend={historyData.length > 1 ? historyData.map(h => h.health_score) : undefined} />
           </div>
-          <div className="h-48">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={historyData.map((h, i) => ({
-                run: `Run ${i + 1}`,
-                score: h.health_score,
-                critical: h.critical_count,
-                warning: h.warning_count,
-                time: (() => { try { return format(new Date(h.analyzed_at), 'MMM d HH:mm'); } catch { return `Run ${i+1}`; } })(),
-              }))}>
-                <defs>
-                  <linearGradient id="healthGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} />
-                <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} width={30}>
-                  <Label value="Score %" position="insideTopLeft" offset={-5} style={{ fontSize: 9, fill: '#6b7280' }} />
-                </YAxis>
-                <Tooltip
-                  content={({ active, payload }) => {
-                    if (!active || !payload?.length) return null;
-                    const d = payload[0].payload;
-                    return (
-                      <div className="bg-navy-800 border border-navy-600 rounded-lg px-3 py-2 text-xs shadow-xl">
-                        <p className="text-white font-semibold mb-1">Health: {d.score}%</p>
-                        <p className="text-red-400">Critical: {d.critical}</p>
-                        <p className="text-amber-400">Warning: {d.warning}</p>
-                        <p className="text-gray-500 mt-1">{d.time}</p>
-                      </div>
-                    );
-                  }}
-                />
-                <Area type="monotone" dataKey="score" stroke="#06b6d4" fill="url(#healthGradient)" strokeWidth={2} dot={{ fill: '#06b6d4', strokeWidth: 0, r: 3 }} activeDot={{ r: 5, fill: '#06b6d4', stroke: '#0a0e1a', strokeWidth: 2 }} />
-              </AreaChart>
-            </ResponsiveContainer>
+          <div className="mt-6 pt-4 border-t border-navy-700">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-500 uppercase tracking-wider">Analyzed Pods</span>
+              <span className="text-sm font-bold text-white">{health.pod_count}</span>
+            </div>
           </div>
         </div>
-      )}
 
-      {/* Visual Breakdown Charts */}
-      <AnalysisCharts analysis={analysis} />
-
-      {/* AI Insights */}
-      {(analysis.ai_insights?.length ?? 0) > 0 && (
-        <AIInsightsCard insights={analysis.ai_insights ?? []} />
-      )}
-
-      {/* Two-column layout: Signal Correlation Timeline + AI Diagnostic Summary */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        {/* Left column (60%) - Signal Correlation Timeline */}
-        <div className="lg:col-span-3 bg-navy-800 border border-navy-700 rounded-xl p-6" style={{ boxShadow: '0 0 30px rgba(6,182,212,0.04)' }}>
-          <div className="flex items-center gap-2 mb-5">
-            <div className="w-8 h-8 bg-[#06b6d4]/20 rounded-lg flex items-center justify-center" style={{ boxShadow: '0 0 12px rgba(6,182,212,0.2)' }}>
-              <Clock size={18} className="text-[#06b6d4]" />
+        {/* AI Insight */}
+        {summary && (
+          <div className="bg-navy-800 border border-navy-700 rounded-xl p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <Sparkles size={16} className="text-accent-blue" />
+              <span className="text-xs font-semibold text-accent-blue uppercase tracking-wider">AI Insight</span>
             </div>
-            <h3 className="text-base font-semibold text-white">Signal Correlation Timeline</h3>
+            <p className="text-sm text-gray-400 italic leading-relaxed">&ldquo;{summary.length > 200 ? summary.slice(0, 200) + '...' : summary}&rdquo;</p>
+            <div className="flex gap-2 mt-3">
+              <span className="text-[10px] px-2 py-0.5 bg-accent-blue/10 text-accent-blue rounded-full font-medium">Optimization</span>
+              <span className="text-[10px] px-2 py-0.5 bg-accent-green/10 text-accent-green rounded-full font-medium">Recommended</span>
+            </div>
           </div>
+        )}
 
-          {timelineEntries.length === 0 ? (
-            <p className="text-sm text-gray-500 text-center py-8">No events recorded</p>
-          ) : (
-            <div className="relative pl-6">
-              {/* Vertical line */}
-              <div className="absolute left-[7px] top-0 bottom-0 w-px bg-navy-500" />
-
-              <div className="space-y-3">
-                {timelineEntries.map((entry) => {
-                  const isExpanded = expandedTimelineId === entry.id;
-                  return (
-                    <button
-                      key={entry.id}
-                      onClick={() => setExpandedTimelineId(isExpanded ? null : entry.id)}
-                      className="relative flex gap-3 w-full text-left group"
-                    >
-                      {/* Dot */}
-                      <div
-                        className={clsx(
-                          'absolute left-[-20px] top-3 w-2.5 h-2.5 rounded-full ring-2 ring-navy-700',
-                          severityDotColor(entry.severity)
-                        )}
-                      />
-
-                      {/* Card */}
-                      <div className="flex-1 bg-navy-800 border border-navy-600 rounded-lg p-3 group-hover:border-navy-500 transition-colors">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-[10px] font-mono text-gray-500">
-                            {(() => { try { return format(new Date(entry.timestamp), 'HH:mm:ss'); } catch { return '--:--:--'; } })()}
-                          </span>
-                          <SeverityBadge severity={entry.severity} />
-                        </div>
-                        <p className="text-sm text-gray-200 font-medium">{entry.title}</p>
-                        {isExpanded && (
-                          <p className="text-xs text-gray-400 mt-1.5 leading-relaxed">{entry.description}</p>
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+        {/* Severity Summary */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between bg-navy-800 border border-navy-700 rounded-xl px-5 py-3.5">
+            <div className="flex items-center gap-2">
+              <AlertCircle size={16} className="text-red-400" />
+              <span className="text-sm text-gray-300">Critical Issues</span>
             </div>
-          )}
-        </div>
-
-        {/* Right column (40%) - AI Diagnostic Summary */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* AI Summary */}
-          {summary && (
-            <div className="bg-navy-800 border border-navy-700 rounded-xl p-6" style={{ boxShadow: '0 0 30px rgba(139,92,246,0.04)' }}>
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 bg-[#8b5cf6]/20 rounded-lg flex items-center justify-center" style={{ boxShadow: '0 0 12px rgba(139,92,246,0.2)' }}>
-                  <Brain size={18} className="text-[#8b5cf6]" />
-                </div>
-                <h3 className="text-base font-semibold text-white">AI Diagnostic Summary</h3>
-              </div>
-              <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-line">{summary}</p>
+            <span className="text-lg font-bold text-red-400">{health.critical_count}</span>
+          </div>
+          <div className="flex items-center justify-between bg-navy-800 border border-navy-700 rounded-xl px-5 py-3.5">
+            <div className="flex items-center gap-2">
+              <AlertTriangle size={16} className="text-amber-400" />
+              <span className="text-sm text-gray-300">Warnings</span>
             </div>
-          )}
-
-          {/* AI Diagnostic Cards */}
-          {diagnosticCards.length > 0 && (
-            <div className="space-y-2">
-              {diagnosticCards.map((card) => (
-                <div
-                  key={card.id}
-                  className={clsx(
-                    'bg-navy-700 border border-navy-600 rounded-lg p-3 border-l-4 transition-colors hover:border-navy-500',
-                    severityBorderColor(card.severity)
-                  )}
-                >
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
-                    {card.category}
-                  </span>
-                  <p className="text-sm text-gray-300 mt-0.5">{card.description}</p>
-                </div>
-              ))}
+            <span className="text-lg font-bold text-amber-400">{health.warning_count}</span>
+          </div>
+          <div className="flex items-center justify-between bg-navy-800 border border-navy-700 rounded-xl px-5 py-3.5">
+            <div className="flex items-center gap-2">
+              <CheckCircle size={16} className="text-accent-green" />
+              <span className="text-sm text-gray-300">Passed Checks</span>
             </div>
-          )}
+            <span className="text-lg font-bold text-accent-green">{Math.max(0, health.pod_count - health.critical_count - health.warning_count)}</span>
+          </div>
         </div>
       </div>
 
-      {/* Cluster Health Grid */}
-      <ClusterHealthGrid resourceHealth={analysis.resource_health ?? []} />
+      {/* Right Column - Charts & Findings */}
+      <div className="flex-1 space-y-6 min-w-0">
+        {/* Charts Row */}
+        <div className="grid grid-cols-2 gap-6">
+          {/* Severity Distribution - Vertical Bar Chart */}
+          <div className="bg-navy-800 border border-navy-700 rounded-xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-white uppercase tracking-wider">Severity Distribution</h3>
+              <span className="text-[10px] text-gray-500">Total Events: {issues.length}</span>
+            </div>
+            <div className="h-48">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={[
+                  { name: 'CRITICAL', value: health.critical_count, fill: '#ef4444' },
+                  { name: 'WARNING', value: health.warning_count, fill: '#f59e0b' },
+                  { name: 'INFO', value: health.info_count, fill: '#3b82f6' },
+                ]} barGap={8}>
+                  <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <Tooltip contentStyle={{ backgroundColor: '#1a2332', border: '1px solid #243044', borderRadius: '8px' }} />
+                  <Bar dataKey="value" radius={[4, 4, 0, 0]} barSize={40}>
+                    {[
+                      { fill: '#ef4444' },
+                      { fill: '#f59e0b' },
+                      { fill: '#3b82f6' },
+                    ].map((entry, index) => (
+                      <Cell key={index} fill={entry.fill} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
 
-      {/* Generate Resolution Steps */}
-      <div className="flex justify-center">
-        <button
-          onClick={onOpenPlaybook}
-          className="flex items-center gap-2 px-8 py-3.5 bg-[#8b5cf6] hover:bg-[#7c3aed] text-white font-semibold rounded-xl transition-all duration-200 shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 hover:scale-[1.02]"
-        >
-          <Zap size={18} />
-          GENERATE RESOLUTION STEPS
-        </button>
+          {/* Resource Load - Donut */}
+          <div className="bg-navy-800 border border-navy-700 rounded-xl p-5">
+            <h3 className="text-sm font-semibold text-white uppercase tracking-wider mb-4">Resource Load</h3>
+            <div className="h-48 relative">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={[
+                      { name: 'Used', value: health.score },
+                      { name: 'Available', value: 100 - health.score },
+                    ]}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={50}
+                    outerRadius={75}
+                    startAngle={90}
+                    endAngle={-270}
+                    dataKey="value"
+                  >
+                    <Cell fill="#f59e0b" />
+                    <Cell fill="#1a2332" />
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-2xl font-bold text-white">{health.score}%</span>
+                <span className="text-[10px] text-gray-500 uppercase tracking-wider">CPU Used</span>
+              </div>
+            </div>
+            <div className="flex justify-center gap-6 mt-2">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-accent-blue" />
+                <span className="text-[10px] text-gray-500">Compute</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-amber-400" />
+                <span className="text-[10px] text-gray-500">I/O Wait</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Top Critical Findings */}
+        <div>
+          <h3 className="text-sm font-semibold text-white uppercase tracking-wider mb-4">Top 5 Critical Findings</h3>
+          <div className="space-y-3">
+            {issues
+              .sort((a, b) => {
+                const order: Record<string, number> = { critical: 0, warning: 1, info: 2 };
+                return (order[a.severity] ?? 3) - (order[b.severity] ?? 3);
+              })
+              .slice(0, 5)
+              .map((issue) => (
+                <IssueCard key={issue.id} issue={issue} />
+              ))}
+          </div>
+        </div>
+
+        {/* Export to Playbook */}
+        <div className="flex justify-end">
+          <button
+            onClick={onOpenPlaybook}
+            className="flex items-center gap-2 px-6 py-3 bg-accent-blue hover:bg-blue-600 text-white font-semibold rounded-xl transition-all shadow-lg shadow-blue-500/20"
+          >
+            <Zap size={16} />
+            Export to Playbook
+          </button>
+        </div>
       </div>
     </div>
   );

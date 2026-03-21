@@ -42,6 +42,7 @@ const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'overview', label: 'Overview', icon: <LayoutDashboard size={18} /> },
   { id: 'issues', label: 'Issues', icon: <AlertTriangle size={18} /> },
   { id: 'cluster-map', label: 'Cluster Map', icon: <Network size={18} /> },
+  { id: 'log-correlation', label: 'Correlations', icon: <Zap size={18} /> },
   { id: 'logs', label: 'Logs', icon: <FileText size={18} /> },
   { id: 'chat', label: 'Chat', icon: <MessageCircle size={18} /> },
 ];
@@ -200,6 +201,14 @@ export default function AnalysisView() {
             >
               {isReanalyzing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
               Re-analyze Bundle
+            </button>
+
+            <button
+              onClick={() => setPreflightOpen(true)}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-navy-700 hover:bg-navy-600 text-gray-300 text-xs font-bold uppercase tracking-wider rounded-lg transition-colors border border-navy-600"
+            >
+              <Box size={14} />
+              Generate Preflight
             </button>
 
             <div className="space-y-0.5">
@@ -406,17 +415,18 @@ function OverviewTab({
             </div>
           </div>
 
-          {/* Resource Load - Donut */}
+          {/* Workload Status */}
           <div className="bg-navy-800 border border-navy-700 rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-white uppercase tracking-wider mb-4">Resource Load</h3>
+            <h3 className="text-sm font-semibold text-white uppercase tracking-wider mb-4">Workload Status</h3>
             <div className="h-48 relative">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
                     data={[
-                      { name: 'Used', value: health.score },
-                      { name: 'Available', value: 100 - health.score },
-                    ]}
+                      { name: 'Healthy', value: Math.max(0, health.pod_count - health.critical_count - health.warning_count) },
+                      { name: 'Warning', value: health.warning_count },
+                      { name: 'Critical', value: health.critical_count },
+                    ].filter(d => d.value > 0)}
                     cx="50%"
                     cy="50%"
                     innerRadius={50}
@@ -425,24 +435,29 @@ function OverviewTab({
                     endAngle={-270}
                     dataKey="value"
                   >
-                    <Cell fill="#f59e0b" />
-                    <Cell fill="#1a2332" />
+                    <Cell fill="#10b981" />
+                    {health.warning_count > 0 && <Cell fill="#f59e0b" />}
+                    {health.critical_count > 0 && <Cell fill="#ef4444" />}
                   </Pie>
                 </PieChart>
               </ResponsiveContainer>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-2xl font-bold text-white">{health.score}%</span>
-                <span className="text-[10px] text-gray-500 uppercase tracking-wider">CPU Used</span>
+                <span className="text-2xl font-bold text-white">{health.pod_count}</span>
+                <span className="text-[10px] text-gray-500 uppercase tracking-wider">Total Pods</span>
               </div>
             </div>
             <div className="flex justify-center gap-6 mt-2">
               <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-accent-blue" />
-                <span className="text-[10px] text-gray-500">Compute</span>
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <span className="text-[10px] text-gray-500">Healthy</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-amber-400" />
-                <span className="text-[10px] text-gray-500">I/O Wait</span>
+                <span className="text-[10px] text-gray-500">Warning</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-red-400" />
+                <span className="text-[10px] text-gray-500">Critical</span>
               </div>
             </div>
           </div>
@@ -463,6 +478,29 @@ function OverviewTab({
               ))}
           </div>
         </div>
+
+        {/* AI Bundle Insights */}
+        {analysis.ai_insights && analysis.ai_insights.length > 0 && (
+          <div className="bg-navy-800 border border-navy-700 rounded-xl p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Sparkles size={16} className="text-accent-blue" />
+              <h3 className="text-sm font-semibold text-white uppercase tracking-wider">AI Bundle Insights</h3>
+            </div>
+            <ul className="space-y-2.5">
+              {analysis.ai_insights.map((insight, i) => (
+                <li key={i} className="flex items-start gap-2.5 text-sm text-gray-400 leading-relaxed">
+                  <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-accent-blue shrink-0" />
+                  {insight}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Cluster Health Grid */}
+        {analysis.resource_health && analysis.resource_health.length > 0 && (
+          <ClusterHealthGrid resourceHealth={analysis.resource_health} />
+        )}
 
         {/* Export to Playbook */}
         <div className="flex justify-end">

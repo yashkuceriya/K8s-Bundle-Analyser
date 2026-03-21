@@ -4,6 +4,10 @@ export interface BundleInfo {
   upload_time: string;
   status: string;
   file_path: string;
+  analysis?: {
+    health_score?: number;
+    issues?: Array<{ severity: string }>;
+  };
 }
 
 export interface Issue {

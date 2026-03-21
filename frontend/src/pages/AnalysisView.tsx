@@ -6,7 +6,6 @@ import {
   AlertTriangle,
   FileText,
   Network,
-  Clock,
   Box,
   Search,
   Filter,
@@ -14,7 +13,6 @@ import {
   Zap,
   Loader2,
   RefreshCw,
-  HelpCircle,
   Sparkles,
   AlertCircle,
 } from 'lucide-react';
@@ -22,7 +20,6 @@ import { format } from 'date-fns';
 import clsx from 'clsx';
 import Navbar from '../components/Navbar';
 import LoadingSpinner from '../components/LoadingSpinner';
-import SeverityBadge from '../components/SeverityBadge';
 import IssueCard from '../components/IssueCard';
 import HealthScore from '../components/HealthScore';
 const ClusterMap = lazy(() => import('../components/ClusterMap'));
@@ -33,9 +30,9 @@ import ErrorBoundary from '../components/ErrorBoundary';
 import { PlaybookModal } from '../components/PlaybookExport';
 import PreflightViewer from '../components/PreflightViewer';
 import { getAnalysis, getBundle, reanalyzeBundle, exportReport, getAnalysisHistory } from '../api/client';
-import type { AnalysisResult, BundleInfo, Issue, LogEntry, TimelineEvent, AnalysisHistoryEntry } from '../types';
+import type { AnalysisResult, BundleInfo, Issue, LogEntry, AnalysisHistoryEntry } from '../types';
 
-type Tab = 'overview' | 'issues' | 'cluster-map' | 'logs' | 'chat' | 'log-correlation' | 'timeline';
+type Tab = 'overview' | 'issues' | 'cluster-map' | 'logs' | 'chat' | 'log-correlation';
 
 const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'overview', label: 'Overview', icon: <LayoutDashboard size={18} /> },
@@ -210,16 +207,6 @@ export default function AnalysisView() {
               Generate Preflight
             </button>
 
-            <div className="space-y-0.5">
-              <button className="sidebar-item sidebar-item-inactive w-full">
-                <FileText size={16} />
-                Docs
-              </button>
-              <button className="sidebar-item sidebar-item-inactive w-full">
-                <HelpCircle size={16} />
-                Support
-              </button>
-            </div>
           </div>
         </aside>
 
@@ -248,13 +235,13 @@ export default function AnalysisView() {
                 onClick={() => setPlaybookOpen(true)}
                 className="px-3 py-1.5 text-xs font-medium text-gray-300 bg-navy-700 hover:bg-navy-600 rounded-lg transition-colors"
               >
-                Export PDF
+                Export Playbook
               </button>
               <button
                 onClick={handleExport}
                 className="px-3 py-1.5 text-xs font-medium text-white bg-navy-700 hover:bg-navy-600 border border-navy-600 rounded-lg transition-colors"
               >
-                Share Report
+                Export JSON
               </button>
             </div>
           </div>
@@ -281,7 +268,6 @@ export default function AnalysisView() {
                 </ErrorBoundary>
               </div>
             )}
-            {activeTab === 'timeline' && <TimelineTab events={analysis.raw_events} />}
             {activeTab === 'chat' && bundleId && (
               <ErrorBoundary fallback={<div className="p-8 text-center"><p className="text-sm text-gray-400">Chat unavailable</p></div>}>
                 <div className="max-w-4xl mx-auto h-[calc(100vh-12rem)]">
@@ -697,102 +683,3 @@ function LogViewerTab({ logs }: { logs: LogEntry[] }) {
   );
 }
 
-/* ============================================================ */
-/* Timeline Tab                                                  */
-/* ============================================================ */
-
-function TimelineTab({ events }: { events: TimelineEvent[] }) {
-  const [severityFilter, setSeverityFilter] = useState<string>('all');
-
-  const filtered = useMemo(() => {
-    const sorted = [...events].sort(
-      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-    );
-    if (severityFilter === 'all') return sorted;
-    return sorted.filter((e) => e.severity.toLowerCase() === severityFilter);
-  }, [events, severityFilter]);
-
-  const dotColor = (severity: string) => {
-    const s = severity.toLowerCase();
-    if (s === 'critical' || s === 'error') return 'bg-[#ef4444] shadow-red-400/50';
-    if (s === 'warning' || s === 'warn') return 'bg-[#f59e0b] shadow-amber-400/50';
-    if (s === 'info') return 'bg-[#06b6d4] shadow-cyan-400/50';
-    return 'bg-gray-400';
-  };
-
-  if (events.length === 0) {
-    return (
-      <div className="bg-navy-700 border border-navy-600 rounded-xl p-12 text-center text-gray-500">
-        <Clock size={40} className="mx-auto mb-3 text-gray-600" />
-        <p>No timeline events available</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="max-w-screen-lg space-y-4">
-      {/* Filter */}
-      <div className="flex items-center gap-3 bg-navy-800 border border-navy-600 rounded-xl p-4">
-        <Filter size={16} className="text-gray-500" />
-        <select
-          value={severityFilter}
-          onChange={(e) => setSeverityFilter(e.target.value)}
-          aria-label="Filter timeline by severity"
-          className="bg-navy-700 border border-navy-600 rounded-lg px-3 py-1.5 text-sm text-gray-300 outline-none focus:border-[#06b6d4]"
-        >
-          <option value="all">All Severities</option>
-          <option value="critical">Critical</option>
-          <option value="warning">Warning</option>
-          <option value="info">Info</option>
-        </select>
-        <span className="text-xs text-gray-500">{filtered.length} events</span>
-      </div>
-
-      {/* Timeline */}
-      <div className="relative pl-8">
-        {/* Vertical line */}
-        <div className="absolute left-[15px] top-0 bottom-0 w-px bg-navy-600" />
-
-        <div className="space-y-4">
-          {filtered.map((event, idx) => (
-            <div key={`${event.timestamp}-${event.type}-${idx}`} className="relative flex gap-4">
-              {/* Dot */}
-              <div
-                className={clsx(
-                  'absolute left-[-21px] top-4 w-3 h-3 rounded-full shadow-lg ring-4 ring-navy-900',
-                  dotColor(event.severity)
-                )}
-              />
-
-              {/* Card */}
-              <div className="flex-1 bg-navy-700 border border-navy-600 rounded-xl p-4 hover:border-navy-500 transition-colors">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <SeverityBadge severity={event.severity} />
-                    <span className="text-xs text-gray-500 font-mono">
-                      {(() => {
-                        try {
-                          return format(new Date(event.timestamp), 'MMM d, HH:mm:ss');
-                        } catch {
-                          return event.timestamp;
-                        }
-                      })()}
-                    </span>
-                  </div>
-                  <span className="text-xs text-gray-500 bg-navy-800 px-2 py-0.5 rounded">{event.type}</span>
-                </div>
-                <p className="text-sm text-gray-300">{event.message}</p>
-                {event.resource && (
-                  <p className="text-xs text-gray-500 mt-1.5 flex items-center gap-1">
-                    <Box size={12} />
-                    {event.resource}
-                  </p>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}

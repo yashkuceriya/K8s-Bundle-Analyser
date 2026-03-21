@@ -22,6 +22,7 @@ export default function HistoryView() {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<'all' | 'critical' | 'stable'>('all');
 
   const load = useCallback(async () => {
     try {
@@ -134,9 +135,9 @@ export default function HistoryView() {
             )}
             {/* Filter buttons */}
             <div className="flex items-center gap-1 bg-navy-800 border border-navy-700 rounded-lg p-0.5">
-              <button className="px-3 py-1 text-xs font-medium text-white bg-navy-700 rounded-md">All</button>
-              <button className="px-3 py-1 text-xs font-medium text-gray-400 hover:text-gray-200 rounded-md">Critical</button>
-              <button className="px-3 py-1 text-xs font-medium text-gray-400 hover:text-gray-200 rounded-md">Stable</button>
+              <button onClick={() => setFilter('all')} className={clsx('px-3 py-1 text-xs font-medium rounded-md', filter === 'all' ? 'text-white bg-navy-700' : 'text-gray-400 hover:text-gray-200')}>All</button>
+              <button onClick={() => setFilter('critical')} className={clsx('px-3 py-1 text-xs font-medium rounded-md', filter === 'critical' ? 'text-white bg-navy-700' : 'text-gray-400 hover:text-gray-200')}>Critical</button>
+              <button onClick={() => setFilter('stable')} className={clsx('px-3 py-1 text-xs font-medium rounded-md', filter === 'stable' ? 'text-white bg-navy-700' : 'text-gray-400 hover:text-gray-200')}>Stable</button>
             </div>
           </div>
         </div>
@@ -157,7 +158,11 @@ export default function HistoryView() {
           </div>
         ) : (
           <div className="space-y-3">
-            {items.map(({ bundle, analysis, history, expanded }) => (
+            {items.filter(item => {
+              if (filter === 'critical') return (item.analysis?.cluster_health.critical_count ?? 0) > 0;
+              if (filter === 'stable') return item.analysis !== null && (item.analysis.cluster_health.critical_count ?? 0) === 0;
+              return true;
+            }).map(({ bundle, analysis, history, expanded }) => (
               <div key={bundle.id} className="bg-navy-800 border border-navy-700 rounded-xl overflow-hidden hover:border-navy-600 transition-colors">
                 <div className="p-5 flex items-center gap-5">
                   {/* Checkbox */}

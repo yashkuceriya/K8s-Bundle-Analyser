@@ -140,12 +140,12 @@ export default function Dashboard() {
       <Navbar />
       <main className="px-8 py-8 max-w-screen-2xl mx-auto space-y-8">
 
-        {/* Top 3-column section */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Top 2-column section */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Hero */}
           <div className="space-y-4">
             <h1 className="text-5xl font-bold text-white leading-[1.1]">
-              System Health<br />Portal
+              K8s Bundle<br />Analyzer
             </h1>
             <p className="text-sm text-gray-400 leading-relaxed max-w-sm">
               Upload cluster diagnostic bundles for instant analysis, pattern matching, and health scoring.
@@ -154,10 +154,6 @@ export default function Dashboard() {
               <div>
                 <p className="text-3xl font-bold text-white">{bundles.length > 0 ? bundles.length : '0'}</p>
                 <p className="text-[10px] text-gray-500 uppercase tracking-widest font-semibold">Bundles Analyzed</p>
-              </div>
-              <div>
-                <p className="text-3xl font-bold text-white">98.2%</p>
-                <p className="text-[10px] text-gray-500 uppercase tracking-widest font-semibold">Uptime Avg.</p>
               </div>
             </div>
           </div>
@@ -208,40 +204,6 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* System Feed */}
-          <div className="bg-navy-800 border border-navy-700 rounded-xl p-5">
-            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">System Feed</h3>
-            <div className="space-y-3">
-              {bundles.slice(0, 4).map((b) => (
-                <div key={b.id} className="flex items-start gap-3 p-2 rounded-lg hover:bg-navy-700/50 transition-colors">
-                  <div className={clsx(
-                    'w-2 h-2 rounded-full mt-1.5 shrink-0',
-                    b.status === 'completed' ? 'bg-accent-green' :
-                    b.status === 'analyzing' ? 'bg-accent-yellow animate-pulse' :
-                    b.status === 'failed' ? 'bg-red-400' :
-                    'bg-gray-500'
-                  )} />
-                  <div className="min-w-0">
-                    <p className="text-sm text-gray-200 font-semibold truncate">
-                      {b.status === 'completed' ? 'Analysis Complete' :
-                       b.status === 'analyzing' ? 'Analyzing Bundle...' :
-                       b.status === 'failed' ? 'Analysis Failed' :
-                       'Upload Received'}
-                    </p>
-                    <p className="text-xs text-gray-500 truncate">
-                      {b.filename}
-                      <span className="text-gray-600 ml-2">
-                        {(() => { try { const mins = Math.round((Date.now() - new Date(b.upload_time).getTime()) / 60000); return mins < 60 ? `${mins}m ago` : mins < 1440 ? `${Math.round(mins/60)}h ago` : `${Math.round(mins/1440)}d ago`; } catch { return ''; } })()}
-                      </span>
-                    </p>
-                  </div>
-                </div>
-              ))}
-              {bundles.length === 0 && (
-                <p className="text-xs text-gray-600 text-center py-4">No recent activity</p>
-              )}
-            </div>
-          </div>
         </div>
 
         {/* Uploaded bundle action bar */}
@@ -317,10 +279,10 @@ export default function Dashboard() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {bundles.map((bundle) => {
                 const cfg = statusConfig[bundle.status] || statusConfig.uploaded;
-                const analysis = (bundle as any).analysis;
-                const criticalCount = analysis?.issues?.filter((i: any) => i.severity === 'critical' || i.severity === 'error').length ?? 0;
-                const warningCount = analysis?.issues?.filter((i: any) => i.severity === 'warning').length ?? 0;
-                const optimizationCount = analysis?.issues?.filter((i: any) => i.severity === 'info' || i.severity === 'optimization').length ?? 0;
+                const analysis = bundle.analysis;
+                const criticalCount = analysis?.issues?.filter((i) => i.severity === 'critical' || i.severity === 'error').length ?? 0;
+                const warningCount = analysis?.issues?.filter((i) => i.severity === 'warning').length ?? 0;
+                const optimizationCount = analysis?.issues?.filter((i) => i.severity === 'info' || i.severity === 'optimization').length ?? 0;
                 const healthScore = analysis?.health_score ?? null;
 
                 return (

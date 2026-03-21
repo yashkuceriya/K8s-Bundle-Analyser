@@ -53,6 +53,7 @@ export default function IssueCard({ issue }: IssueCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [copiedCommand, setCopiedCommand] = useState<string | null>(null);
   const [checkedFixes, setCheckedFixes] = useState<Set<string>>(new Set());
+  const [applyLabel, setApplyLabel] = useState('Apply Suggested Fix');
 
   const hasAIExplanation = !!issue.ai_explanation;
   const hasProposedFixes = (issue.proposed_fixes?.length ?? 0) > 0;
@@ -293,8 +294,21 @@ export default function IssueCard({ issue }: IssueCardProps) {
                     ))}
                   </div>
 
-                  <button className="mt-1 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-lg transition-colors">
-                    Apply Suggested Fix
+                  <button
+                    className="mt-1 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={checkedFixes.size === 0 ? 'Select fixes above first' : undefined}
+                    disabled={checkedFixes.size === 0}
+                    onClick={() => {
+                      const commands = issue.proposed_fixes
+                        ?.filter(fix => checkedFixes.has(fix.id) && fix.command)
+                        .map(fix => fix.command!) ?? [];
+                      if (commands.length === 0) return;
+                      navigator.clipboard.writeText(commands.join('\n'));
+                      setApplyLabel('Copied!');
+                      setTimeout(() => setApplyLabel('Apply Suggested Fix'), 2000);
+                    }}
+                  >
+                    {applyLabel}
                   </button>
                 </div>
               )}

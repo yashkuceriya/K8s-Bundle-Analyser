@@ -1,5 +1,4 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Search, Bell, Settings } from 'lucide-react';
 import clsx from 'clsx';
 
 interface NavbarProps {
@@ -59,26 +58,6 @@ export default function Navbar(_props: NavbarProps) {
           ))}
         </div>
 
-        {/* Right: Search + Icons */}
-        <div className="flex items-center gap-3 shrink-0">
-          <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-            <input
-              type="text"
-              placeholder="Search resources..."
-              className="w-48 bg-navy-800 border border-navy-700 rounded-lg pl-9 pr-3 py-1.5 text-sm text-gray-300 outline-none focus:border-accent-blue/50 placeholder-gray-600"
-            />
-          </div>
-          <button className="p-2 text-gray-400 hover:text-gray-200 hover:bg-navy-800 rounded-lg transition-colors">
-            <Bell size={18} />
-          </button>
-          <button className="p-2 text-gray-400 hover:text-gray-200 hover:bg-navy-800 rounded-lg transition-colors">
-            <Settings size={18} />
-          </button>
-          <div className="w-8 h-8 bg-gradient-to-br from-accent-blue to-accent-purple rounded-full flex items-center justify-center text-white text-xs font-bold">
-            U
-          </div>
-        </div>
       </div>
     </nav>
   );

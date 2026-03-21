@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import AnalysisView from './pages/AnalysisView';
 import HistoryView from './pages/HistoryView';
@@ -36,6 +36,13 @@ export default function App() {
           <Route path="/analysis/:bundleId" element={<AnalysisView />} />
           <Route path="/history" element={<HistoryView />} />
           <Route path="/compare" element={<CompareView />} />
+          <Route path="*" element={
+            <div className="min-h-screen bg-navy-900 flex flex-col items-center justify-center gap-4">
+              <p className="text-6xl font-bold text-gray-600">404</p>
+              <p className="text-gray-400">Page not found</p>
+              <Link to="/" className="text-accent-blue hover:text-cyan-300 text-sm">Go to Dashboard</Link>
+            </div>
+          } />
         </Routes>
       </ErrorBoundary>
     </BrowserRouter>

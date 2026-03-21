@@ -9,10 +9,11 @@ interface BundleChatProps {
 }
 
 const SUGGESTED_QUESTIONS = [
-  'Show pod yaml',
-  'Analyze network policy',
-  'Recent config changes',
-  'What are the most critical issues?',
+  'What are the most critical issues in this cluster?',
+  'Which pods are crashing and why?',
+  'Are there any networking problems?',
+  'What resource limits are missing?',
+  'Summarize the cluster health',
 ];
 
 // Keep the existing renderMarkdown function exactly as-is

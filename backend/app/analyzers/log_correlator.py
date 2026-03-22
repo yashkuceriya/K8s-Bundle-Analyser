@@ -534,9 +534,13 @@ class LogCorrelator:
                     if waiting.get("reason") in ("CrashLoopBackOff", "ImagePullBackOff", "ErrImagePull"):
                         status = "critical"
                         break
+                    last_terminated = cs.get("lastState", {}).get("terminated", {})
+                    if last_terminated.get("reason") == "OOMKilled":
+                        status = "critical"
+                        break
                     if not cs.get("ready", False):
                         status = "warning"
-                    if cs.get("restartCount", 0) > 5:
+                    elif cs.get("restartCount", 0) > 5:
                         status = "warning"
             elif phase == "Succeeded":
                 status = "healthy"
@@ -752,16 +756,20 @@ class LogCorrelator:
         """Determine pod health from status."""
         phase = pod.get("status", {}).get("phase", "Unknown")
         if phase == "Running":
-            # Check container statuses for issues
+            # Check critical states first, then warnings
+            has_warning = False
             for cs in pod.get("status", {}).get("containerStatuses", []) or []:
-                if not cs.get("ready", False):
-                    return "warning"
                 waiting = cs.get("state", {}).get("waiting", {})
                 if waiting.get("reason") in ("CrashLoopBackOff", "ImagePullBackOff", "ErrImagePull"):
                     return "critical"
+                last_terminated = cs.get("lastState", {}).get("terminated", {})
+                if last_terminated.get("reason") == "OOMKilled":
+                    return "critical"
+                if not cs.get("ready", False):
+                    has_warning = True
                 if cs.get("restartCount", 0) > 5:
-                    return "warning"
-            return "healthy"
+                    has_warning = True
+            return "warning" if has_warning else "healthy"
         elif phase == "Succeeded":
             return "healthy"
         elif phase == "Pending":

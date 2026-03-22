@@ -8,8 +8,8 @@ interface HealthScoreProps {
 
 export default function HealthScore({ score, size = 160, trend }: HealthScoreProps) {
   const { color, label } = useMemo(() => {
-    if (score > 70) return { color: '#10b981', label: 'EXCELLENT' };
-    if (score > 40) return { color: '#f59e0b', label: 'MODERATE' };
+    if (score >= 80) return { color: '#10b981', label: 'HEALTHY' };
+    if (score >= 50) return { color: '#f59e0b', label: 'DEGRADED' };
     return { color: '#ef4444', label: 'CRITICAL' };
   }, [score]);
 

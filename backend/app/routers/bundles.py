@@ -1544,20 +1544,28 @@ def _compute_cluster_health(parsed_data: dict[str, Any], issues: list[Issue]) ->
             pod_ratio = 0.5  # Assume moderate health when phases are unknown
 
         # Weighted formula:
-        # 40% pod health, 15% node health, 15% workload readiness,
-        # 15% issue penalty, 15% stability
-        pod_score = pod_ratio * 40
+        # 30% pod health, 15% node health, 15% workload readiness,
+        # 25% issue penalty (critical issues dominate), 15% stability
+        pod_score = pod_ratio * 30
         node_score = node_ratio * 15
         workload_score = workload_ratio * 15
 
-        # Issue penalty: critical issues hurt more
-        max_issue_penalty = 15
-        issue_penalty = min(max_issue_penalty, critical_count * 4 + warning_count * 1.5)
+        # Issue penalty: critical issues now have massive impact
+        max_issue_penalty = 25
+        issue_penalty = min(max_issue_penalty, critical_count * 10 + warning_count * 2)
         issue_score = max_issue_penalty - issue_penalty
 
         stability_score = stability * 15
 
-        score = int(max(0, min(100, pod_score + node_score + workload_score + issue_score + stability_score)))
+        raw_score = pod_score + node_score + workload_score + issue_score + stability_score
+
+        # Hard cap: critical issues force score below thresholds
+        if critical_count >= 3:
+            raw_score = min(raw_score, 30)
+        elif critical_count >= 1:
+            raw_score = min(raw_score, 65)
+
+        score = int(max(0, min(100, raw_score)))
     else:
         # No pods at all — score based purely on issues
         if critical_count > 0:

@@ -74,9 +74,9 @@ export default function HistoryView() {
   };
 
   return (
-    <div className="min-h-screen bg-navy-900">
+    <div className="min-h-screen bg-surface">
       <Navbar />
-      <main className="max-w-screen-xl mx-auto px-8 py-8 space-y-8">
+      <main className="max-w-screen-xl mx-auto px-8 pt-24 pb-12 space-y-8">
 
         {/* Health Performance Trend */}
         {items.some(i => i.analysis) && (

@@ -176,9 +176,9 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-navy-900">
+    <div className="min-h-screen bg-surface">
       <Navbar />
-      <main className="px-8 py-8 max-w-screen-2xl mx-auto space-y-8">
+      <main className="px-8 pt-24 pb-12 max-w-screen-2xl mx-auto space-y-8">
 
         {/* Top 2-column section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

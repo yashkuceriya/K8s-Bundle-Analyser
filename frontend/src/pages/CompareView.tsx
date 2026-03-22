@@ -124,7 +124,7 @@ export default function CompareView() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-navy-900">
+      <div className="min-h-screen bg-surface">
         <Navbar />
         <LoadingSpinner size={40} label="Loading comparison..." className="py-24" />
       </div>
@@ -133,7 +133,7 @@ export default function CompareView() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-navy-900">
+      <div className="min-h-screen bg-surface">
         <Navbar />
         <div className="max-w-screen-lg mx-auto px-6 py-16 text-center">
           <AlertCircle size={40} className="text-red-400 mx-auto mb-4" />
@@ -145,9 +145,9 @@ export default function CompareView() {
   }
 
   return (
-    <div className="min-h-screen bg-navy-900">
+    <div className="min-h-screen bg-surface">
       <Navbar />
-      <main className="max-w-screen-xl mx-auto px-6 py-10 space-y-8">
+      <main className="max-w-screen-xl mx-auto px-6 pt-24 pb-12 space-y-8">
         {/* Bundle Selection */}
         {!leftAnalysis && !rightAnalysis && !loading && (
           <div className="bg-navy-800 border border-navy-700 rounded-xl p-8 max-w-2xl mx-auto">

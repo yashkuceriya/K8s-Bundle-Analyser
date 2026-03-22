@@ -121,7 +121,7 @@ export default function AnalysisView() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-navy-900">
+      <div className="min-h-screen bg-surface pt-16">
         <Navbar />
         <div className="flex items-center justify-center h-[80vh]">
           <LoadingSpinner size={40} label="Loading analysis..." />
@@ -132,7 +132,7 @@ export default function AnalysisView() {
 
   if (error || !analysis) {
     return (
-      <div className="min-h-screen bg-navy-900">
+      <div className="min-h-screen bg-surface pt-16">
         <Navbar />
         <div className="flex flex-col items-center justify-center h-[80vh] gap-4">
           <AlertTriangle size={48} className="text-red-400" />

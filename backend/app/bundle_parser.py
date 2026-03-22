@@ -550,9 +550,17 @@ class BundleParser:
     def _extract_items(data: Any) -> list[dict]:
         """Extract items from a Kubernetes List object or return as-is if already a list."""
         if isinstance(data, list):
-            return data
+            return [d for d in data if isinstance(d, dict)]
         if isinstance(data, dict):
-            if "items" in data and isinstance(data["items"], list):
-                return data["items"]
-            return [data]
+            items = data.get("items")
+            if isinstance(items, list):
+                return [d for d in items if isinstance(d, dict)]
+            # items is null/missing — check if this is a List kind (empty list, not a resource)
+            kind = data.get("kind", "")
+            if kind.endswith("List") or items is None:
+                return []
+            # Single resource (has metadata.name)
+            if data.get("metadata", {}).get("name"):
+                return [data]
+            return []
         return []

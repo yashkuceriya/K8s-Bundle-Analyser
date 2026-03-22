@@ -1456,7 +1456,15 @@ def _compute_cluster_health(parsed_data: dict[str, Any], issues: list[Issue]) ->
     stability = 1.0 - (restart_penalty * 0.5 + event_penalty * 0.5)
 
     if total_pods > 0:
-        pod_ratio = running_pods / total_pods
+        # Count pods with known-good status
+        known_pods = sum(
+            1 for p in pods if p.get("status", {}).get("phase") in ("Running", "Succeeded", "Pending", "Failed")
+        )
+        # If all pods are synthesized (Unknown phase), use issue-based scoring instead
+        if known_pods > 0:
+            pod_ratio = running_pods / total_pods
+        else:
+            pod_ratio = 0.5  # Assume moderate health when phases are unknown
 
         # Weighted formula:
         # 40% pod health, 15% node health, 15% workload readiness,
@@ -1474,7 +1482,13 @@ def _compute_cluster_health(parsed_data: dict[str, Any], issues: list[Issue]) ->
 
         score = int(max(0, min(100, pod_score + node_score + workload_score + issue_score + stability_score)))
     else:
-        score = 0 if critical_count > 0 else 50
+        # No pods at all — score based purely on issues
+        if critical_count > 0:
+            score = max(10, 50 - critical_count * 10 - warning_count * 3)
+        elif warning_count > 0:
+            score = max(30, 70 - warning_count * 5)
+        else:
+            score = 50
 
     return ClusterHealth(
         score=score,

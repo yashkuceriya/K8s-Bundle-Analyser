@@ -133,6 +133,12 @@ class BundleParser:
         # Scan for YAML resources (handles non-standard bundle formats)
         self._scan_yaml_resources(data)
 
+        # Scan JSON resources in cluster-resources/ that we might have missed
+        self._scan_json_resources(data)
+
+        # Synthesize resource info from events/logs when direct data is missing
+        self._synthesize_from_events(data)
+
         # Summary counts
         logger.info(
             "Parsed: %d pods, %d deploys, %d svcs, %d nodes, %d events, %d logs, %d sts, %d ds, %d jobs, %d ingresses",
@@ -223,6 +229,94 @@ class BundleParser:
             except Exception as e:
                 logger.warning("Error scanning YAML %s: %s", yaml_file, e)
 
+    def _scan_json_resources(self, data: dict[str, Any]) -> None:
+        """Scan cluster-resources/ for JSON files that match known resource types."""
+        cr_dir = self._root / "cluster-resources"
+        if not cr_dir.exists():
+            return
+
+        # Map filenames to data keys
+        json_map: dict[str, str] = {
+            "pods": "pods",
+            "deployments": "deployments",
+            "services": "services",
+            "nodes": "nodes",
+            "namespaces": "namespaces",
+            "statefulsets": "statefulsets",
+            "daemonsets": "daemonsets",
+            "replicasets": "replicasets",
+            "jobs": "jobs",
+            "cronjobs": "cronjobs",
+            "ingresses": "ingresses",
+            "events": "events",
+        }
+
+        for json_file in cr_dir.rglob("*.json"):
+            try:
+                stem = json_file.stem.lower()
+                # Match by filename
+                for pattern, key in json_map.items():
+                    if pattern in stem and not data.get(key):
+                        file_data = self._parse_json_file(json_file)
+                        if file_data:
+                            items = self._extract_items(file_data)
+                            if items:
+                                data[key].extend(items)
+                                logger.info("Found %d %s from %s", len(items), key, json_file.name)
+                                break
+            except Exception as e:
+                logger.warning("Error scanning JSON %s: %s", json_file, e)
+
+    def _synthesize_from_events(self, data: dict[str, Any]) -> None:
+        """Extract pod/node info from events and logs when resource files are missing."""
+        # Only synthesize if we have no pods/nodes but do have events or logs
+        events = data.get("events", [])
+        logs = data.get("logs", [])
+
+        if not data.get("pods") and (events or logs):
+            seen_pods: dict[str, dict] = {}
+            # Extract from events
+            for event in events:
+                involved = event.get("involvedObject", {})
+                kind = involved.get("kind", "")
+                name = involved.get("name", "")
+                ns = involved.get("namespace", "default")
+                if kind == "Pod" and name and name not in seen_pods:
+                    seen_pods[name] = {
+                        "metadata": {"name": name, "namespace": ns},
+                        "status": {"phase": "Unknown"},
+                    }
+                elif kind == "Node" and name:
+                    if not any(n.get("metadata", {}).get("name") == name for n in data["nodes"]):
+                        data["nodes"].append({"metadata": {"name": name}, "status": {"conditions": []}})
+            # Extract from logs
+            for log in logs:
+                pod = log.get("pod", "")
+                ns = log.get("namespace", "default")
+                if pod and pod not in seen_pods:
+                    seen_pods[pod] = {
+                        "metadata": {"name": pod, "namespace": ns},
+                        "status": {"phase": "Unknown"},
+                    }
+
+            data["pods"].extend(seen_pods.values())
+            if seen_pods:
+                logger.info("Synthesized %d pods from events/logs", len(seen_pods))
+
+        # Synthesize namespaces from any resource that has namespace info
+        if not data.get("namespaces"):
+            ns_set: set[str] = set()
+            for key in ("pods", "deployments", "services", "events"):
+                for item in data.get(key, []):
+                    ns = item.get("metadata", {}).get("namespace", "")
+                    if not ns and key == "events":
+                        ns = item.get("involvedObject", {}).get("namespace", "")
+                    if ns:
+                        ns_set.add(ns)
+            data["namespaces"] = [{"metadata": {"name": ns}} for ns in ns_set]
+            if ns_set:
+                logger.info("Synthesized %d namespaces", len(ns_set))
+
     def _parse_cluster_version(self) -> dict | None:
         """Parse cluster-info/cluster_version.json."""
         path = self._root / "cluster-info" / "cluster_version.json"
@@ -246,23 +340,32 @@ class BundleParser:
         return self._extract_items(data)
 
     def _parse_resource_by_namespace(self, resource_type: str) -> list[dict]:
-        """Parse cluster-resources/<resource_type>/<namespace>.json files."""
-        resource_dir = self._root / "cluster-resources" / resource_type
+        """Parse cluster-resources/<resource_type>/ directory or single file."""
+        cr_dir = self._root / "cluster-resources"
         all_items: list[dict] = []
 
-        if not resource_dir.exists() or not resource_dir.is_dir():
-            return all_items
+        # Strategy 1: cluster-resources/<type>/<namespace>.json (standard layout)
+        resource_dir = cr_dir / resource_type
+        if resource_dir.exists() and resource_dir.is_dir():
+            for data_file in resource_dir.iterdir():
+                if data_file.suffix not in (".json", ".yaml", ".yml"):
+                    continue
+                try:
+                    data = self._parse_data_file(data_file)
+                    if data is not None:
+                        all_items.extend(self._extract_items(data))
+                except Exception as e:
+                    logger.warning("Error parsing %s: %s", data_file, e)
 
-        for json_file in resource_dir.iterdir():
-            if not json_file.name.endswith(".json"):
-                continue
-            try:
-                data = self._parse_json_file(json_file)
-                if data is not None:
-                    items = self._extract_items(data)
-                    all_items.extend(items)
-            except Exception as e:
-                logger.warning("Error parsing %s: %s", json_file, e)
+        # Strategy 2: cluster-resources/<type>.json (single file)
+        if not all_items:
+            for ext in (".json", ".yaml", ".yml"):
+                single_file = cr_dir / f"{resource_type}{ext}"
+                if single_file.exists():
+                    data = self._parse_data_file(single_file)
+                    if data is not None:
+                        all_items.extend(self._extract_items(data))
+                    break
 
         return all_items
 

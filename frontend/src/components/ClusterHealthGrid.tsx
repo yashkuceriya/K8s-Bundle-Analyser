@@ -59,8 +59,8 @@ export default function ClusterHealthGrid({ resourceHealth }: Props) {
   return (
     <div className="health-grid-container relative bg-navy-700 border border-navy-600 rounded-xl p-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-base font-semibold text-white">Cluster Resource Health</h3>
-        <span className="text-xs text-gray-500">{resourceHealth.length} resources</span>
+        <h3 className="text-base font-semibold text-white">Resource Status</h3>
+        <span className="text-xs text-gray-500">{resourceHealth.length} resources monitored</span>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {sortedKeys.map((type) => {

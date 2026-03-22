@@ -333,21 +333,21 @@ function OverviewTab({
           <HealthScore score={health.score} size={120} trend={historyData.length > 1 ? historyData.map(h => h.health_score) : undefined} />
         </div>
 
-        {/* Critical */}
+        {/* Critical Issues */}
         <div className="bg-navy-800 border border-navy-700 rounded-xl p-5 flex flex-col justify-between">
           <div className="flex items-center gap-2 mb-2">
             <AlertCircle size={16} className="text-red-400" />
-            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Critical</span>
+            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Critical Issues</span>
           </div>
           <span className="text-4xl font-bold text-red-400" style={{ textShadow: '0 0 20px rgba(239,68,68,0.3)' }}>{health.critical_count}</span>
-          <span className="text-[10px] text-gray-600 mt-1">issues need attention</span>
+          <span className="text-[10px] text-gray-600 mt-1">detected problems</span>
         </div>
 
-        {/* Warnings */}
+        {/* Warning Issues */}
         <div className="bg-navy-800 border border-navy-700 rounded-xl p-5 flex flex-col justify-between">
           <div className="flex items-center gap-2 mb-2">
             <AlertTriangle size={16} className="text-amber-400" />
-            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Warnings</span>
+            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Warning Issues</span>
           </div>
           <span className="text-4xl font-bold text-amber-400" style={{ textShadow: '0 0 20px rgba(245,158,11,0.3)' }}>{health.warning_count}</span>
           <span className="text-[10px] text-gray-600 mt-1">potential concerns</span>

@@ -216,24 +216,37 @@ function createScene(
 
   // Build nodes
   const idToMesh = new Map<THREE.Object3D, string>();
-  const meshData: { mesh: THREE.Mesh; glow: THREE.Mesh; ring: THREE.Mesh; baseY: number; off: number }[] = [];
+  const meshData: { mesh: THREE.Mesh; glow: THREE.Mesh; ring: THREE.Mesh; baseY: number; off: number; isCritical: boolean; isWarning: boolean }[] = [];
 
   nodes.forEach(({ node, p }) => {
     const c = getColor(node.type, node.status);
     const size = getNodeSize(node.type);
+    const sl = node.status.toLowerCase();
+    const isCritical = sl === 'critical' || sl === 'error';
+    const isWarning = sl === 'warning' || sl === 'pending';
 
-    // Outer glow sphere
+    // Outer glow sphere — much bigger and brighter for critical nodes
+    const glowSize = isCritical ? size * 4.0 : isWarning ? size * 3.0 : size * 2.5;
+    const glowOpacity = isCritical ? 0.15 : isWarning ? 0.08 : 0.06;
     const glow = new THREE.Mesh(
-      new THREE.SphereGeometry(size * 2.5, 16, 16),
-      new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.06 }),
+      new THREE.SphereGeometry(glowSize, 16, 16),
+      new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: glowOpacity }),
     );
     glow.position.copy(p);
     scene.add(glow);
 
-    // Orbit ring
+    // Add a point light for critical nodes — makes them illuminate nearby geometry
+    if (isCritical) {
+      const alertLight = new THREE.PointLight(0xef4444, 1.5, 8);
+      alertLight.position.copy(p);
+      scene.add(alertLight);
+    }
+
+    // Orbit ring — thicker for critical
+    const ringThickness = isCritical ? 0.06 : 0.025;
     const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(size * 1.6, 0.025, 8, 64),
-      new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.25 }),
+      new THREE.TorusGeometry(size * 1.6, ringThickness, 8, 64),
+      new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: isCritical ? 0.6 : 0.25 }),
     );
     ring.position.copy(p);
     ring.rotation.x = Math.PI / 2 + (Math.random() - 0.5) * 0.4;
@@ -242,8 +255,9 @@ function createScene(
 
     // Main mesh — distinct geometry per type
     const geo = createNodeGeometry(node.type, size);
+    const emissiveIntensity = isCritical ? 0.8 : isWarning ? 0.5 : 0.4;
     const mat = new THREE.MeshStandardMaterial({
-      color: c, emissive: c, emissiveIntensity: 0.4,
+      color: c, emissive: c, emissiveIntensity,
       roughness: 0.15, metalness: 0.85,
     });
     const mesh = new THREE.Mesh(geo, mat);
@@ -251,7 +265,7 @@ function createScene(
     scene.add(mesh);
     idToMesh.set(mesh, node.id);
 
-    meshData.push({ mesh, glow, ring, baseY: p.y, off: p.x * 1.3 + p.z * 0.7 });
+    meshData.push({ mesh, glow, ring, baseY: p.y, off: p.x * 1.3 + p.z * 0.7, isCritical, isWarning });
   });
 
   // Build edges — glowing tubes
@@ -364,8 +378,8 @@ function createScene(
     requestAnimationFrame(loop);
     const t = clock.getElapsedTime();
 
-    // Animate nodes — gentle float + rotate
-    meshData.forEach(({ mesh, glow, ring, baseY, off }) => {
+    // Animate nodes — gentle float + rotate; critical nodes pulse
+    meshData.forEach(({ mesh, glow, ring, baseY, off, isCritical, isWarning }) => {
       const y = baseY + Math.sin(t * 0.6 + off) * 0.12;
       mesh.position.y = y;
       glow.position.y = y;
@@ -373,7 +387,18 @@ function createScene(
       mesh.rotation.y = t * 0.15 + off;
       mesh.rotation.x = Math.sin(t * 0.3 + off) * 0.1;
       ring.rotation.z = t * 0.25 + off;
-      glow.scale.setScalar(1 + Math.sin(t * 1.0 + off) * 0.15);
+
+      if (isCritical) {
+        // Critical: strong pulsing glow that breathes
+        const pulse = 0.6 + Math.sin(t * 2.5 + off) * 0.4;
+        glow.scale.setScalar(1 + pulse * 0.5);
+        (glow.material as THREE.MeshBasicMaterial).opacity = 0.08 + pulse * 0.12;
+      } else if (isWarning) {
+        // Warning: gentle pulse
+        glow.scale.setScalar(1 + Math.sin(t * 1.5 + off) * 0.2);
+      } else {
+        glow.scale.setScalar(1 + Math.sin(t * 1.0 + off) * 0.15);
+      }
     });
 
     // Animate particles along curves

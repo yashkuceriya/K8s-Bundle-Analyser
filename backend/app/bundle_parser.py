@@ -555,9 +555,12 @@ class BundleParser:
             items = data.get("items")
             if isinstance(items, list):
                 return [d for d in items if isinstance(d, dict)]
-            # items is null/missing — check if this is a List kind (empty list, not a resource)
+            # "items" key exists but is null — this is an empty K8s List
+            if "items" in data and items is None:
+                return []
+            # List kind with no items — empty list
             kind = data.get("kind", "")
-            if kind.endswith("List") or items is None:
+            if kind.endswith("List"):
                 return []
             # Single resource (has metadata.name)
             if data.get("metadata", {}).get("name"):

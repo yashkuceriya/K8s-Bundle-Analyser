@@ -16,7 +16,7 @@ import clsx from 'clsx';
 import Navbar from '../components/Navbar';
 import LoadingSpinner from '../components/LoadingSpinner';
 import HealthScore from '../components/HealthScore';
-import { uploadBundle, getBundles, analyzeBundle, deleteBundle } from '../api/client';
+import { uploadBundle, getBundles, analyzeBundle, analyzeWithProgress, deleteBundle } from '../api/client';
 import type { BundleInfo } from '../types';
 
 const statusConfig: Record<string, { icon: React.ReactNode; color: string; bg: string; dot: string }> = {
@@ -56,6 +56,7 @@ export default function Dashboard() {
   const [dragOver, setDragOver] = useState(false);
   const [uploadedBundle, setUploadedBundle] = useState<BundleInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [analysisProgress, setAnalysisProgress] = useState<{ step: string; detail: string; progress: number } | null>(null);
 
   const hasLoadedOnce = useRef(false);
   const fetchBundles = useCallback(async () => {
@@ -87,16 +88,29 @@ export default function Dashboard() {
       const bundle = await uploadBundle(file);
       setUploadedBundle(bundle);
       await fetchBundles();
-      // Auto-trigger analysis
+      // Auto-trigger analysis with live progress
       setUploading(false);
       setAnalyzing(bundle.id);
+      setAnalysisProgress({ step: 'starting', detail: 'Starting analysis...', progress: 0 });
       try {
-        await analyzeBundle(bundle.id);
+        await analyzeWithProgress(bundle.id, (data) => {
+          setAnalysisProgress(data);
+        });
         setUploadedBundle(null);
+        setAnalysisProgress(null);
         navigate(`/analysis/${bundle.id}`);
       } catch {
-        setError('Analysis failed. Please try again.');
-        await fetchBundles();
+        // Fallback to non-streaming
+        try {
+          await analyzeBundle(bundle.id);
+          setUploadedBundle(null);
+          setAnalysisProgress(null);
+          navigate(`/analysis/${bundle.id}`);
+        } catch {
+          setError('Analysis failed. Please try again.');
+          setAnalysisProgress(null);
+          await fetchBundles();
+        }
       } finally {
         setAnalyzing(null);
       }
@@ -261,19 +275,48 @@ export default function Dashboard() {
 
         {/* Currently Analyzing */}
         {analyzing && (
-          <div className="bg-navy-800 border border-navy-700 rounded-xl p-5">
-            <div className="flex items-center gap-3 mb-3">
-              <span className="w-2 h-2 rounded-full bg-accent-blue animate-pulse" />
-              <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Currently Analyzing</span>
+          <div className="bg-navy-800 border border-navy-700 rounded-xl p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-accent-blue/10 rounded-xl flex items-center justify-center">
+                <div className="w-5 h-5 border-2 border-accent-blue border-t-transparent rounded-full animate-spin" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-white">
+                  {analysisProgress?.step === 'complete' ? 'Analysis Complete' : 'Analyzing Bundle'}
+                </p>
+                <p className="text-xs text-gray-400">{analysisProgress?.detail || 'Initializing...'}</p>
+              </div>
             </div>
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-navy-700 rounded-xl flex items-center justify-center">
-                <div className="w-6 h-6 border-2 border-accent-blue border-t-transparent rounded-full animate-spin" />
-              </div>
-              <div className="flex-1 space-y-2">
-                <div className="h-3 bg-navy-700 rounded-full w-3/4 animate-pulse" />
-                <div className="h-2 bg-navy-700 rounded-full w-1/2 animate-pulse" />
-              </div>
+            {/* Progress bar */}
+            <div className="w-full h-2 bg-navy-900 rounded-full overflow-hidden mb-3">
+              <div
+                className="h-full bg-accent-blue rounded-full transition-all duration-500 ease-out"
+                style={{ width: `${analysisProgress?.progress ?? 0}%`, boxShadow: '0 0 8px rgba(6,182,212,0.5)' }}
+              />
+            </div>
+            {/* Step indicators */}
+            <div className="flex items-center justify-between text-[10px] text-gray-600">
+              {['parsing', 'heuristics', 'ai', 'topology', 'finalizing'].map((step) => {
+                const current = analysisProgress?.step;
+                const steps = ['parsing', 'heuristics', 'ai', 'enriching', 'topology', 'finalizing', 'indexing', 'complete'];
+                const currentIdx = steps.indexOf(current || '');
+                const stepIdx = steps.indexOf(step);
+                const isDone = currentIdx > stepIdx;
+                const isActive = current === step;
+                return (
+                  <span
+                    key={step}
+                    className={clsx(
+                      'uppercase tracking-wider font-semibold',
+                      isDone && 'text-accent-blue',
+                      isActive && 'text-white',
+                      !isDone && !isActive && 'text-gray-700'
+                    )}
+                  >
+                    {step === 'ai' ? 'AI Analysis' : step.charAt(0).toUpperCase() + step.slice(1)}
+                  </span>
+                );
+              })}
             </div>
           </div>
         )}

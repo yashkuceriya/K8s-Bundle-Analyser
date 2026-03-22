@@ -73,3 +73,35 @@ export async function compareAnalyses(request: CompareRequest): Promise<CompareR
   const response = await api.post<CompareResponse>('/bundles/compare', request);
   return response.data;
 }
+
+export function analyzeWithProgress(
+  bundleId: string,
+  onProgress: (data: { step: string; detail: string; progress: number }) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const url = `${api.defaults.baseURL}/bundles/${bundleId}/analyze/stream`;
+    const source = new EventSource(url);
+
+    source.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        onProgress(data);
+        if (data.step === 'complete' || data.step === 'error') {
+          source.close();
+          if (data.step === 'error') {
+            reject(new Error(data.detail));
+          } else {
+            resolve();
+          }
+        }
+      } catch {
+        // ignore parse errors
+      }
+    };
+
+    source.onerror = () => {
+      source.close();
+      reject(new Error('Connection lost during analysis'));
+    };
+  });
+}

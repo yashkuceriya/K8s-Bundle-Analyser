@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import json
 import logging
 import shutil
@@ -70,6 +72,10 @@ router = APIRouter(prefix="/api/bundles", tags=["Bundles"])
 _bundles: dict[str, BundleInfo] = {}
 _analyses: dict[str, AnalysisResult] = {}
 _parsed_data: dict[str, dict] = {}
+
+# Content-hash based analysis cache
+_bundle_hashes: dict[str, str] = {}  # bundle_id -> file hash
+_hash_to_analysis: dict[str, str] = {}  # file hash -> bundle_id with analysis
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "bundles"
 
@@ -227,6 +233,10 @@ async def upload_bundle(file: UploadFile = File(...)):
         shutil.rmtree(bundle_dir, ignore_errors=True)
         raise HTTPException(status_code=500, detail=f"Failed to save file: {e}")
 
+    # Compute content hash for cache deduplication
+    file_hash = hashlib.sha256(content).hexdigest()
+    _bundle_hashes[bundle_id] = file_hash
+
     # Extract the archive
     extract_dir = bundle_dir / "extracted"
     try:
@@ -252,6 +262,13 @@ async def upload_bundle(file: UploadFile = File(...)):
         file_path=str(extract_dir),
     )
     _bundles[bundle_id] = bundle_info
+
+    # Check cache — if identical bundle was already analyzed, note it
+    if file_hash in _hash_to_analysis:
+        cached_id = _hash_to_analysis[file_hash]
+        if cached_id in _analyses:
+            bundle_info.status = BundleStatus.completed
+
     _save_bundle_info(bundle_id, bundle_info)
     save_bundle(bundle_id, bundle_info.filename, bundle_info.status.value, bundle_info.file_path)
 
@@ -330,6 +347,159 @@ async def get_bundle(bundle_id: str):
     return _bundles[bundle_id]
 
 
+@router.get("/{bundle_id}/analyze/stream", tags=["Analysis"])
+async def analyze_bundle_stream(bundle_id: str):
+    """Run analysis with live progress updates via Server-Sent Events."""
+    from starlette.responses import StreamingResponse
+
+    if bundle_id not in _bundles:
+        raise HTTPException(status_code=404, detail="Bundle not found")
+
+    bundle = _bundles[bundle_id]
+    bundle.status = BundleStatus.analyzing
+
+    async def event_stream():
+        try:
+            def send(step: str, detail: str, progress: int):
+                data = json.dumps({"step": step, "detail": detail, "progress": progress})
+                return f"data: {data}\n\n"
+
+            # Step 1: Parse
+            yield send("parsing", "Parsing support bundle...", 5)
+            parser = BundleParser(bundle.file_path)
+            parsed_data = await asyncio.to_thread(parser.parse)
+            _parsed_data[bundle_id] = parsed_data
+
+            pods = len(parsed_data.get("pods", []))
+            nodes = len(parsed_data.get("nodes", []))
+            events = len(parsed_data.get("events", []))
+            yield send("parsing", f"Found {pods} pods, {nodes} nodes, {events} events", 15)
+
+            # Step 2: Heuristic analysis
+            yield send("heuristics", f"Running 25 pattern detectors...", 25)
+            heuristic = HeuristicAnalyzer(parsed_data)
+            heuristic_issues = await asyncio.to_thread(heuristic.analyze)
+            yield send("heuristics", f"Found {len(heuristic_issues)} issues", 40)
+
+            # Step 3: AI analysis
+            yield send("ai", "AI analyzing root causes...", 45)
+            ai_analyzer = AIAnalyzer()
+            ai_result = await asyncio.to_thread(ai_analyzer.analyze, parsed_data, heuristic_issues, bundle_id)
+            ai_count = len(ai_result.get("additional_issues", []))
+            yield send("ai", f"AI found {ai_count} additional insights", 65)
+
+            # Step 4: Merge issues
+            all_issues = list(heuristic_issues)
+            for ai_issue_data in ai_result.get("additional_issues", []):
+                try:
+                    severity_val = ai_issue_data.get("severity", "info").lower()
+                    if severity_val not in ("critical", "warning", "info"):
+                        severity_val = "info"
+                    all_issues.append(Issue(
+                        severity=Severity(severity_val),
+                        title=ai_issue_data.get("title", "AI-detected issue"),
+                        category=ai_issue_data.get("category", "configuration"),
+                        description=ai_issue_data.get("description", ""),
+                        evidence=ai_issue_data.get("evidence", []),
+                        remediation=ai_issue_data.get("remediation", ""),
+                        ai_confidence=0.75,
+                    ))
+                except Exception:
+                    pass
+
+            # Step 5: Enrich issues
+            yield send("enriching", "Enriching issues with fixes and log snippets...", 70)
+            all_logs = parsed_data.get("logs", [])
+            for issue in all_issues:
+                if not issue.proposed_fixes and issue.remediation:
+                    fix_steps = [s.strip() for s in issue.remediation.replace(". ", ".\n").split("\n") if s.strip()]
+                    for step in fix_steps:
+                        command = None
+                        is_automated = False
+                        if "kubectl" in step:
+                            cmd_start = step.find("kubectl")
+                            command = step[cmd_start:].strip().rstrip(".")
+                            is_automated = True
+                        issue.proposed_fixes.append(ProposedFix(description=step, command=command, is_automated=is_automated))
+
+                if not issue.relevant_log_snippets:
+                    matching_logs = [l for l in all_logs if l.get("level") in ("error", "warn") and (
+                        (issue.namespace and l.get("namespace") == issue.namespace) or
+                        (issue.resource and l.get("pod") and issue.resource in l.get("pod", ""))
+                    )][:50]
+                    source_logs: dict[str, list[str]] = {}
+                    for ml in matching_logs:
+                        src = ml.get("source", "unknown")
+                        source_logs.setdefault(src, []).append(ml.get("message", "")[:300])
+                    for src, lines in source_logs.items():
+                        highlight = [i for i, line in enumerate(lines) if "error" in line.lower()]
+                        issue.relevant_log_snippets.append(LogSnippet(source=src, lines=lines[:20], highlight_indices=highlight[:10], level="error"))
+
+                if not issue.ai_explanation:
+                    severity_impact = {"critical": "This issue can cause service outages or data loss", "warning": "This issue may degrade performance or reliability", "info": "This is an informational finding worth reviewing"}
+                    issue.ai_explanation = AIExplanation(root_cause=issue.description, impact=severity_impact.get(issue.severity.value, "Unknown impact"), related_issues=[])
+
+            # Step 6: Build topology
+            yield send("topology", "Building cluster topology graph...", 80)
+            correlator = LogCorrelator()
+            timeline_events = correlator.correlate(parsed_data.get("events", []), parsed_data.get("logs", []), all_issues)
+            topology_nodes, topology_edges = correlator.build_topology(parsed_data)
+            correlation_groups = correlator.build_correlation_groups(timeline_events, parsed_data.get("logs", []), all_issues)
+            resource_health = correlator.build_resource_health(parsed_data)
+
+            # Step 7: Finalize
+            yield send("finalizing", "Computing health score...", 90)
+            cluster_health = _compute_cluster_health(parsed_data, all_issues)
+            log_entries = _extract_top_logs(parsed_data.get("logs", []), limit=200)
+            raw_events = [te.model_dump() for te in timeline_events[:500]]
+
+            result = AnalysisResult(
+                bundle_id=bundle_id,
+                status=BundleStatus.completed,
+                cluster_health=cluster_health,
+                issues=all_issues,
+                log_entries=log_entries,
+                topology_nodes=topology_nodes,
+                topology_edges=topology_edges,
+                summary=ai_result.get("summary", "Analysis complete."),
+                analyzed_at=datetime.now(timezone.utc),
+                raw_events=raw_events,
+                correlations=correlation_groups,
+                resource_health=resource_health,
+                ai_insights=ai_result.get("insights", []),
+            )
+
+            _analyses[bundle_id] = result
+            _save_analysis(bundle_id, result)
+            save_analysis(bundle_id, result.model_dump(mode="json"))
+
+            # RAG indexing
+            yield send("indexing", "Indexing for search...", 95)
+            try:
+                chunks = chunk_bundle(bundle_id, parsed_data)
+                indexed = index_chunks(chunks)
+                from app.persistence import save_chunks
+                save_chunks(chunks)
+            except Exception:
+                pass
+
+            bundle.status = BundleStatus.completed
+            _save_bundle_info(bundle_id, bundle)
+
+            # Register hash in cache
+            bundle_hash = _bundle_hashes.get(bundle_id)
+            if bundle_hash:
+                _hash_to_analysis[bundle_hash] = bundle_id
+
+            yield send("complete", f"Analysis complete — {len(all_issues)} issues found", 100)
+
+        except Exception as e:
+            bundle.status = BundleStatus.failed
+            yield f"data: {json.dumps({'step': 'error', 'detail': str(e), 'progress': 0})}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 @router.post("/{bundle_id}/analyze", response_model=AnalysisResult, tags=["Analysis"])
 async def analyze_bundle(bundle_id: str):
     """Run analysis on an uploaded bundle."""
@@ -337,6 +507,19 @@ async def analyze_bundle(bundle_id: str):
         raise HTTPException(status_code=404, detail="Bundle not found")
 
     bundle = _bundles[bundle_id]
+
+    # Cache hit: if this exact bundle content was already analyzed, return cached
+    bundle_hash = _bundle_hashes.get(bundle_id)
+    if bundle_hash and bundle_hash in _hash_to_analysis:
+        cached_id = _hash_to_analysis[bundle_hash]
+        if cached_id in _analyses and cached_id != bundle_id:
+            cached = _analyses[cached_id]
+            # Clone result for this bundle_id
+            result = cached.model_copy(update={"bundle_id": bundle_id, "analyzed_at": datetime.now(timezone.utc)})
+            _analyses[bundle_id] = result
+            bundle.status = BundleStatus.completed
+            return result
+
     bundle.status = BundleStatus.analyzing
 
     try:
@@ -353,7 +536,6 @@ async def analyze_bundle(bundle_id: str):
         heuristic_issues = heuristic.analyze()
 
         # Step 3: Run AI analysis (in thread to avoid blocking event loop)
-        import asyncio
         ai_analyzer = AIAnalyzer()
         ai_result = await asyncio.to_thread(ai_analyzer.analyze, parsed_data, heuristic_issues, bundle_id)
 
@@ -507,6 +689,11 @@ async def analyze_bundle(bundle_id: str):
         bundle.status = BundleStatus.completed
         logger.info("Analysis complete for bundle %s: %d issues found", bundle_id, len(all_issues))
 
+        # Register hash in cache
+        bundle_hash = _bundle_hashes.get(bundle_id)
+        if bundle_hash:
+            _hash_to_analysis[bundle_hash] = bundle_id
+
         return result
 
     except Exception as e:
@@ -640,7 +827,6 @@ async def chat_with_bundle(bundle_id: str, body: ChatRequest):
     history = [{"role": m.role, "content": m.content} for m in body.history]
 
     try:
-        import asyncio
         result = await asyncio.to_thread(chat.ask, body.question, history)
         if isinstance(result, dict):
             answer = result.get("answer", "")

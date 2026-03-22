@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { RefreshCw, Download, Loader2 } from 'lucide-react';
+import { RefreshCw, Download, Loader2, Search, Bell, Settings } from 'lucide-react';
 import clsx from 'clsx';
 
 interface NavbarProps {
@@ -18,6 +18,7 @@ export default function Navbar({ bundleName, onReanalyze, onExport, isReanalyzin
   const navLinks = [
     { to: '/', label: 'Dashboard' },
     { to: '/history', label: 'History' },
+    { to: '/compare', label: 'Compare' },
   ];
 
   const isActive = (path: string) => {
@@ -26,31 +27,22 @@ export default function Navbar({ bundleName, onReanalyze, onExport, isReanalyzin
   };
 
   return (
-    <nav className="bg-navy-900 border-b border-navy-700 sticky top-0 z-50">
-      <div className="px-6 h-14 flex items-center justify-between">
-        {/* Left: Logo + Nav */}
-        <div className="flex items-center gap-6">
-          <Link to="/" className="flex items-center gap-2 hover:opacity-90 transition-opacity shrink-0">
-            <div className="w-7 h-7 bg-accent-blue/20 rounded-lg flex items-center justify-center">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-accent-blue">
-                <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                <path d="M2 17l10 5 10-5" />
-                <path d="M2 12l10 5 10-5" />
-              </svg>
-            </div>
-            <span className="text-base font-bold text-white tracking-tight">K8s Bundle Analyzer</span>
+    <nav className="fixed top-0 w-full z-50 bg-[#0b1326]/80 backdrop-blur-md border-b border-outline-variant/15 shadow-[0_12px_32px_rgba(194,198,214,0.06)]">
+      <div className="px-6 h-16 flex items-center justify-between">
+        <div className="flex items-center gap-8">
+          <Link to="/" className="hover:opacity-90 transition-opacity shrink-0">
+            <span className="text-xl font-black text-primary tracking-tighter font-headline">K8s Bundle Analyzer</span>
           </Link>
-
-          <div className="flex items-center gap-1">
+          <div className="hidden md:flex items-center gap-6">
             {navLinks.map((link) => (
               <Link
                 key={link.to}
                 to={link.to}
                 className={clsx(
-                  'px-3 py-1.5 text-sm font-medium rounded-lg transition-all duration-150',
+                  'font-headline font-bold tracking-tight transition-colors',
                   isActive(link.to)
-                    ? 'text-white bg-navy-800'
-                    : 'text-gray-400 hover:text-gray-200'
+                    ? 'text-primary border-b-2 border-primary pb-1'
+                    : 'text-on-surface-variant hover:text-primary'
                 )}
               >
                 {link.label}
@@ -59,31 +51,31 @@ export default function Navbar({ bundleName, onReanalyze, onExport, isReanalyzin
           </div>
         </div>
 
-        {/* Right: Bundle context (only on analysis page) */}
-        {bundleName && (
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-gray-500 font-mono truncate max-w-[200px]">{bundleName}</span>
-            {onExport && (
-              <button
-                onClick={onExport}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-300 bg-navy-800 hover:bg-navy-700 rounded-lg transition-colors border border-navy-700"
-              >
-                <Download size={12} />
-                Export
-              </button>
-            )}
-            {onReanalyze && (
-              <button
-                onClick={onReanalyze}
-                disabled={isReanalyzing}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-accent-blue hover:bg-blue-600 rounded-lg transition-colors disabled:opacity-50"
-              >
-                {isReanalyzing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                Re-analyze
-              </button>
-            )}
+        <div className="flex items-center gap-4">
+          {bundleName && (
+            <div className="hidden lg:flex items-center gap-3 mr-2">
+              <span className="text-xs text-on-surface-variant font-mono truncate max-w-[200px]">{bundleName}</span>
+              {onExport && (
+                <button onClick={onExport} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-on-surface-variant bg-surface-container hover:bg-surface-container-high rounded-lg transition-colors border border-outline-variant/20">
+                  <Download size={12} /> Export
+                </button>
+              )}
+              {onReanalyze && (
+                <button onClick={onReanalyze} disabled={isReanalyzing} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-primary-container hover:brightness-110 rounded-lg transition-all disabled:opacity-50 shadow-lg shadow-primary-container/20">
+                  {isReanalyzing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                  Re-analyze
+                </button>
+              )}
+            </div>
+          )}
+          <div className="relative hidden sm:block">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
+            <input type="text" placeholder="Search resources..." className="bg-surface-container border-none rounded-lg py-1.5 pl-10 pr-4 text-sm focus:ring-1 focus:ring-primary w-64 text-on-surface-variant placeholder:text-on-surface-variant/50" />
           </div>
-        )}
+          <button className="p-2 text-on-surface-variant hover:bg-surface-container-high transition-all duration-200 rounded-lg active:scale-95"><Bell size={18} /></button>
+          <button className="p-2 text-on-surface-variant hover:bg-surface-container-high transition-all duration-200 rounded-lg active:scale-95"><Settings size={18} /></button>
+          <div className="h-8 w-8 rounded-full bg-primary-container flex items-center justify-center text-xs font-bold text-white border border-outline-variant/30">U</div>
+        </div>
       </div>
     </nav>
   );

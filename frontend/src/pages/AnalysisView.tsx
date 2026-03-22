@@ -149,7 +149,7 @@ export default function AnalysisView() {
   }
 
   return (
-    <div className="min-h-screen bg-navy-900 flex flex-col">
+    <div className="min-h-screen bg-surface flex flex-col">
       <Navbar
         bundleName={bundle?.filename}
         bundleId={bundleId}
@@ -160,52 +160,45 @@ export default function AnalysisView() {
         isReanalyzing={isReanalyzing}
       />
 
-      <div className="flex flex-1">
+      <div className="flex flex-1 pt-16">
         {/* Left Sidebar */}
-        <aside className="w-56 shrink-0 bg-navy-800 border-r border-navy-700 flex flex-col">
+        <aside className="w-64 shrink-0 bg-surface-container-low fixed left-0 top-16 h-[calc(100vh-64px)] flex flex-col p-4 space-y-2 z-40">
           {/* Bundle Info */}
-          <div className="p-4 border-b border-navy-700">
+          <div className="px-2 py-4 mb-4 bg-surface-container-high/40 rounded-xl">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-accent-blue/15 rounded-xl flex items-center justify-center">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent-blue">
-                  <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                  <path d="M2 17l10 5 10-5" />
-                  <path d="M2 12l10 5 10-5" />
-                </svg>
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <Network size={18} className="text-primary" />
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-bold text-white truncate">{bundle?.filename?.replace('.tar.gz', '') || 'Bundle'}</p>
-                <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Health Score: {analysis.cluster_health.score}</p>
+                <p className="text-primary font-bold text-sm tracking-tight truncate">{bundle?.filename?.replace('.tar.gz', '') || 'Bundle'}</p>
+                <p className="text-[0.625rem] text-primary/70 uppercase tracking-widest font-bold">Health Score: {analysis.cluster_health.score}</p>
               </div>
             </div>
           </div>
 
           {/* Navigation */}
-          <div className="flex-1 py-4 px-2">
-            <p className="px-4 mb-2 text-[10px] font-semibold text-gray-600 uppercase tracking-widest">Analysis Hub</p>
-            <div className="space-y-0.5">
-              {tabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={clsx(
-                    'sidebar-item w-full',
-                    activeTab === tab.id ? 'sidebar-item-active' : 'sidebar-item-inactive'
-                  )}
-                >
-                  {tab.icon}
-                  {tab.label}
-                </button>
-              ))}
-            </div>
+          <div className="flex-1 space-y-1">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={clsx(
+                  'sidebar-item w-full',
+                  activeTab === tab.id ? 'sidebar-item-active' : 'sidebar-item-inactive'
+                )}
+              >
+                {tab.icon}
+                {tab.label}
+              </button>
+            ))}
           </div>
 
           {/* Bottom Actions */}
-          <div className="p-3 space-y-3 border-t border-navy-700">
+          <div className="mt-auto pt-4 border-t border-outline-variant/10 space-y-2">
             <button
               onClick={handleReanalyze}
               disabled={isReanalyzing}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-accent-blue hover:bg-blue-600 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition-colors disabled:opacity-50"
+              className="w-full py-3 bg-primary-container text-white font-bold rounded-lg text-[0.6875rem] uppercase tracking-wider hover:brightness-110 transition-all active:scale-[0.98] shadow-lg shadow-primary-container/20 flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {isReanalyzing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
               Re-analyze Bundle
@@ -213,54 +206,55 @@ export default function AnalysisView() {
 
             <button
               onClick={() => setPreflightOpen(true)}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-navy-700 hover:bg-navy-600 text-gray-300 text-xs font-bold uppercase tracking-wider rounded-lg transition-colors border border-navy-600"
+              className="w-full py-2.5 bg-surface-container hover:bg-surface-container-high text-on-surface-variant font-bold rounded-lg text-[0.6875rem] uppercase tracking-wider transition-all flex items-center justify-center gap-2 border border-outline-variant/20"
             >
               <Box size={14} />
               Generate Preflight
             </button>
 
-            <p className="text-[9px] text-gray-600 text-center mt-2">Press 1-6 to switch tabs</p>
+            <p className="text-[9px] text-outline text-center mt-2">Press 1-6 to switch tabs</p>
+            <a href="#" className="sidebar-item sidebar-item-inactive w-full mt-1"><FileText size={16} /> Docs</a>
           </div>
         </aside>
 
         {/* Main Content */}
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex-1 flex flex-col min-w-0 ml-64">
           {/* Top Tab Bar */}
-          <div className="bg-navy-800 border-b border-navy-700 px-6 flex items-center justify-between">
-            <div className="flex items-center gap-0">
+          <div className="border-b border-outline-variant/10 px-8 flex items-center justify-between bg-surface-container/30">
+            <div className="flex gap-8">
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
                   className={clsx(
-                    'px-5 py-3.5 text-sm font-medium border-b-2 transition-colors',
+                    'text-lg font-bold font-headline pb-4 pt-4 transition-colors',
                     activeTab === tab.id
-                      ? 'text-white border-accent-blue'
-                      : 'text-gray-400 border-transparent hover:text-gray-200'
+                      ? 'text-on-surface border-b-2 border-primary'
+                      : 'text-on-surface-variant/60 hover:text-on-surface'
                   )}
                 >
                   {tab.label}
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <button
                 onClick={() => setPlaybookOpen(true)}
-                className="px-3 py-1.5 text-xs font-medium text-gray-300 bg-navy-700 hover:bg-navy-600 rounded-lg transition-colors"
+                className="px-4 py-2 bg-surface-container text-on-surface rounded-lg text-xs font-bold border border-outline-variant/20 hover:bg-surface-container-high transition-all"
               >
                 Export Playbook
               </button>
               <button
-                onClick={handleExport}
-                className="px-3 py-1.5 text-xs font-medium text-white bg-navy-700 hover:bg-navy-600 border border-navy-600 rounded-lg transition-colors"
+                onClick={() => setPreflightOpen(true)}
+                className="px-4 py-2 bg-primary-container text-white rounded-lg text-xs font-bold hover:brightness-110 transition-all shadow-lg shadow-primary-container/20"
               >
-                Export JSON
+                Preflight Export
               </button>
             </div>
           </div>
 
           {/* Tab Content */}
-          <main className="flex-1 p-6 overflow-auto">
+          <main className="flex-1 p-8 overflow-auto bg-surface-container-lowest/30">
             {activeTab === 'overview' && (
               <OverviewTab analysis={analysis} historyData={historyData} onOpenPlaybook={() => setPlaybookOpen(true)} />
             )}

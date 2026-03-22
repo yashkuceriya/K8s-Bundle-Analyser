@@ -238,48 +238,66 @@ class HeuristicAnalyzer:
                     )
 
     def _check_failed_events(self) -> None:
+        # Note: "Unhealthy" is handled by _check_probe_failures with better severity logic
+        fail_patterns = [
+            "Failed",
+            "Error",
+            "BackOff",
+            "FailedScheduling",
+            "FailedMount",
+            "FailedAttachVolume",
+            "FailedCreate",
+        ]
+
+        # Aggregate events by resource to avoid duplicate issues per pod
+        resource_events: dict[str, dict] = {}
         for event in self.data.get("events", []):
-            event_type = event.get("type", "")
-            reason = event.get("reason", "")
-            if event_type != "Warning":
+            if event.get("type") != "Warning":
                 continue
-            # Check for significant failure patterns
-            # Note: "Unhealthy" is handled by _check_probe_failures with better severity logic
-            fail_patterns = [
-                "Failed",
-                "Error",
-                "BackOff",
-                "FailedScheduling",
-                "FailedMount",
-                "FailedAttachVolume",
-                "FailedCreate",
-            ]
+            reason = event.get("reason", "")
             if not any(pat.lower() in reason.lower() for pat in fail_patterns):
                 continue
 
-            message = event.get("message", "")
             involved = event.get("involvedObject", {})
             resource_kind = involved.get("kind", "")
             resource_name = involved.get("name", "")
             ns = involved.get("namespace", "")
-            count = event.get("count", 1)
+            key = f"{ns}/{resource_kind}/{resource_name}"
+
+            if key not in resource_events:
+                resource_events[key] = {
+                    "kind": resource_kind,
+                    "name": resource_name,
+                    "ns": ns,
+                    "reasons": [],
+                    "total_count": 0,
+                    "messages": [],
+                }
+            info = resource_events[key]
+            if reason not in info["reasons"]:
+                info["reasons"].append(reason)
+            info["total_count"] += event.get("count", 1)
+            msg = event.get("message", "")
+            if msg and len(info["messages"]) < 3:
+                info["messages"].append(msg[:200])
+
+        for info in resource_events.values():
+            resource_kind = info["kind"]
+            resource_name = info["name"]
+            ns = info["ns"]
+            reasons = ", ".join(info["reasons"])
 
             self.issues.append(
                 Issue(
                     severity=Severity.warning,
-                    title=f"Warning event: {reason} on {resource_kind}/{resource_name}",
+                    title=f"Warning events on {resource_kind}/{resource_name}: {reasons}",
                     category="pod-health",
                     resource=f"{resource_kind}/{resource_name}" if resource_kind else None,
                     namespace=ns or None,
-                    description=f"Kubernetes warning event ({reason}) occurred {count} time(s): {message}",
-                    evidence=[
-                        f"Reason: {reason}",
-                        f"Message: {message}",
-                        f"Count: {count}",
-                        f"Last seen: {event.get('lastTimestamp', 'N/A')}",
-                    ],
+                    description=f"Kubernetes warning events ({reasons}) occurred {info['total_count']} time(s) on {resource_kind}/{resource_name}.",
+                    evidence=[f"{r}" for r in info["messages"]],
                     remediation=(
-                        f"Investigate the {reason} event on {resource_kind}/{resource_name}. "
+                        f"Investigate {resource_kind}/{resource_name} in namespace '{ns}'. "
                         f"Check the resource status and logs for more details."
                     ),
                     ai_confidence=0.85,
@@ -692,10 +710,14 @@ class HeuristicAnalyzer:
         """Detect suspended or problematic CronJobs."""
         for cj in self.data.get("cronjobs", []):
             meta = cj.get("metadata", {})
-            name = meta.get("name", "unknown")
-            ns = meta.get("namespace", "unknown")
+            name = meta.get("name", "")
+            ns = meta.get("namespace", "")
             spec = cj.get("spec", {})
             status = cj.get("status", {})
+
+            # Skip empty/invalid CronJob entries (parsed from empty namespace files)
+            if not name or not spec.get("schedule"):
+                continue
 
             issues_found = []
 
@@ -703,7 +725,7 @@ class HeuristicAnalyzer:
             if spec.get("suspend", False):
                 issues_found.append("CronJob is suspended")
 
-            # Check for missed schedules (lastScheduleTime far in the past relative to schedule)
+            # Check for missed schedules
             last_schedule = status.get("lastScheduleTime")
             if not last_schedule and not spec.get("suspend", False):
                 issues_found.append("CronJob has never been scheduled")

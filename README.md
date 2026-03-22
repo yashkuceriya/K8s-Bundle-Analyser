@@ -10,13 +10,18 @@ K8s Bundle Analyzer is a web-based tool that ingests support bundles from `kubec
 
 ### Core Analysis
 
-- **15 Heuristic Detectors** -- Fast, deterministic pattern matching for common Kubernetes failure modes. No API key required.
+- **26 Heuristic Detectors** -- Fast, deterministic pattern matching for common Kubernetes failure modes. No API key required.
   - CrashLoopBackOff, OOMKilled, ImagePullBackOff
   - Pending pods, high restart counts, evicted pods
   - Node NotReady, node pressure (memory/disk/PID)
   - PVC binding failures, resource quota exceeded
   - Certificate expiration, DNS failures, connection errors
-  - Deprecated API usage, failed events
+  - Deprecated API usage, failed warning events
+  - Liveness/readiness probe failures, init container failures
+  - Job failures, CronJob issues, stuck StatefulSet rollouts
+  - HPA scaling limits, ingress misconfiguration, service selector mismatches
+  - Missing resource limits, RBAC/permission failures
+  - Troubleshoot.sh bundled analysis.json findings
 - **AI Root-Cause Analysis** -- Feeds heuristic findings and cluster state to Claude, which correlates symptoms across components and identifies causal chains. Separates root causes from downstream effects.
 - **RAG Pipeline** -- OpenAI embeddings with ChromaDB vector store. Bundle content is chunked and indexed for semantic retrieval, powering evidence-grounded chat responses with cited sources.
 - **Health Score with Trend** -- Aggregated cluster health score with severity-weighted issue prioritization. Tracks score across analysis runs to show improvement or degradation over time.
@@ -110,8 +115,8 @@ Open http://localhost:5174
 
 ## Usage
 
-1. **Upload** -- Drag-and-drop or select a `.tar.gz` support bundle
-2. **Analyze** -- Click "Analyze Bundle" to run the two-pass pipeline (heuristic, then AI)
+1. **Try Demo** -- Click "Try Demo" on the dashboard to see a full analysis with sample data instantly
+1. **Upload** -- Drag-and-drop or select a `.tar.gz` support bundle (analysis starts automatically)
 3. **Explore** -- Navigate the results across the dashboard views:
    - **Overview** -- Health score, AI-generated summary, top issues at a glance
    - **Issues** -- Detected problems with expandable evidence (log lines, events) and remediation steps
@@ -131,7 +136,7 @@ Open http://localhost:5174
      v
   +-----------+     +--------------+     +-------------------+
   |   Parse   |---->|  Guardrails  |---->|    Heuristic      |
-  |  Extract  |     |  Sanitize    |     |    15 detectors   |
+  |  Extract  |     |  Sanitize    |     |    26 detectors   |
   +-----------+     +--------------+     +-------------------+
                          |                       |
                          v                       v
@@ -158,11 +163,11 @@ Open http://localhost:5174
 
 ## Testing
 
-The project has 109 tests across backend and frontend.
+The project has 107+ tests across backend and frontend.
 
-**Backend** -- 88 tests via pytest:
+**Backend** -- 107 tests via pytest:
 
-- Heuristic detector coverage (all 15 detectors)
+- Heuristic detector coverage (all 26 detectors, including false-positive tests)
 - Guardrails: injection detection, severity/category validation, HTML stripping, truncation
 - Chat safety: prompt injection rejection, explicit content filtering
 - AI output validation and sanitization
@@ -240,7 +245,7 @@ The generated `.tar.gz` file can be uploaded directly to the analyzer. See `samp
 │   │   ├── routers/
 │   │   │   └── bundles.py           # API endpoints (upload, analyze, chat, export)
 │   │   └── analyzers/
-│   │       ├── heuristic.py         # 15 pattern-based detectors
+│   │       ├── heuristic.py         # 26 pattern-based detectors
 │   │       ├── ai_analyzer.py       # Claude-powered root-cause analysis
 │   │       ├── chat.py              # Conversational Q&A against bundle data
 │   │       ├── log_correlator.py    # Cross-source log correlation
@@ -250,7 +255,7 @@ The generated `.tar.gz` file can be uploaded directly to the analyzer. See `samp
 │   │   │   ├── chunker.py            # Bundle content chunking for RAG
 │   │   │   ├── retriever.py          # Vector similarity retrieval
 │   │   │   └── vector_store.py       # ChromaDB integration
-│   ├── tests/                       # pytest suite (88 tests)
+│   ├── tests/                       # pytest suite (107 tests)
 │   ├── requirements.txt
 │   ├── pyproject.toml            # Ruff linting + pytest config
 │   └── Dockerfile
@@ -278,7 +283,6 @@ The generated `.tar.gz` file can be uploaded directly to the analyzer. See `samp
 │   ├── package.json
 │   └── Dockerfile
 ├── sample-specs/                     # Troubleshoot bundle spec for test generation
-├── ARCHITECTURE.md                   # Detailed architecture documentation
 ├── docker-compose.yml
 ├── Makefile                         # Developer workflow commands
 └── MY_APPROACH_AND_THOUGHTS.md

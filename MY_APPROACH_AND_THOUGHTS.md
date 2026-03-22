@@ -1,25 +1,33 @@
-# My Approach and Thoughts
+# My Approach & Thoughts
 
-I built a support bundle analyzer that treats heuristic detection and AI correlation as complementary passes, not competing approaches. The key insight: the hard part of bundle analysis isn't finding problems -- it's connecting them into a causal story an ISV engineer can act on.
+## The Problem
 
-## Two-Pass Analysis
+ISV developers receive opaque tar.gz archives from customers they can't SSH into. They manually grep through logs, cross-reference events with pod states, and try to reconstruct what went wrong — often spending hours on issues that turn out to be a misconfigured value.
 
-The heuristic layer runs first: 15 detectors for CrashLoopBackOff, OOMKilled, image pull failures, node pressure, DNS issues, and other well-characterized failure modes. Many ISV customers run air-gapped clusters where external API calls are a non-starter. Deterministic detectors catch ~80% of common issues instantly, with zero external dependencies. The AI pass then receives these findings alongside summarized cluster state and does what rules cannot: correlate a frontend timeout with a backend ImagePullBackOff with a node memory pressure condition, producing a single causal chain instead of three separate alerts.
+## My Approach
 
-## The ISV Workflow Gap
+I built a full-stack analysis platform that treats support bundles as first-class data objects, not just log dumps.
 
-ISV support engineers don't fix clusters -- they tell customers what to fix. This changes everything about what the tool outputs. A list of detected issues is necessary but insufficient. The analyzer generates shareable remediation playbooks with specific commands tied to evidence, and automatically produces Troubleshoot preflight checks from detected failures. Diagnosis leads to remediation leads to prevention.
+**Parser (25+ resource types):** The bundle parser handles multiple troubleshoot.sh layouts — namespace-level lists, individual resource files, nested pod logs, and YAML variants. It extracts pods, deployments, StatefulSets, DaemonSets, jobs, ingresses, HPAs, RBAC, events, and logs into a unified data model. When resource files are missing, it synthesizes context from events and logs. It also imports the bundle's own `analysis.json` findings.
 
-## Chat as Investigation Tool
+**26 Heuristic Detectors:** Pattern-matching detectors catch CrashLoopBackOff, OOMKilled, ImagePullBackOff, pending pods, node pressure, certificate expiration, DNS failures, connection errors, RBAC violations, service selector mismatches, ingress misconfigurations, missing resource limits, HPA scaling issues, stuck StatefulSet rollouts, failed jobs, init container failures, and troubleshoot.sh bundled analysis results. Each produces structured issues with evidence, remediation steps, and kubectl commands.
 
-Static reports answer predetermined questions. Real support investigations are exploratory -- "why can't the frontend reach the API server?" Bundle chat lets the engineer interrogate the data conversationally, getting evidence-backed answers grounded in actual log lines. This is where AI adds genuine value over grep: synthesizing across dozens of files to answer a specific question with cited evidence.
+**AI Root Cause Analysis:** Heuristic findings are sent to an LLM with rich cluster context — degraded workloads, pod ownership chains, ingress routes, HPA concerns — for deeper analysis. It identifies cascading failures, correlates issues across components, and generates actionable insights that pattern matching alone can't find.
 
-## AI Safety
+**RAG-Enhanced Chat:** Bundle data is chunked and embedded into a vector store. Users ask natural language questions and get answers grounded in actual bundle evidence with source citations.
 
-The guardrails are architectural, not afterthought. Input sanitization strips injection attempts from bundle data before it reaches the LLM. The system prompt is persona-locked. Output validation enforces allowed severity/category values, strips HTML, truncates unbounded responses. DOMPurify prevents XSS through AI output. 109 tests cover heuristic detection, guardrail patterns, output validation, and chat safety. The philosophy: test the constraints around the AI, not the AI's specific answers.
+## What Makes This Interesting
 
-## What I'd Build Next
+**Preflight Spec Generation:** Detected issues are converted into troubleshoot.sh `v1beta2` preflight specs. An ISV gives these to customers to run *before* problems escalate — closing the loop from diagnosis to prevention. Directly useful to Replicated's ecosystem.
 
-The scaling bottleneck is context. Large production bundles (100MB+) overwhelm any LLM context window, so a RAG pipeline with chunked log embeddings is the natural next step. Local LLM support via Ollama would make AI viable in air-gapped environments. The production architecture would use multi-step agentic analysis -- separate agents for triage, deep-dive, correlation, and remediation -- replacing the single-shot prompt with tool-calling agents that query specific logs on demand. Finally, deeper integration with Troubleshoot's ecosystem -- ingesting analyzer outcomes from `analysis.json`, contributing findings back as custom analyzer specs, and integrating with the Enterprise Portal bundle upload workflow -- would position this as a natural extension of the support toolchain.
+**Live Analysis Progress:** Analysis streams via SSE — users watch each step in real-time (parsing → detectors → AI → topology) instead of staring at a spinner.
 
-Support bundles contain everything needed to diagnose a problem, but the signal is buried under megabytes of nominal state. The real challenge is not extraction -- it is narrative.
+**Content-Hash Caching:** Identical bundles return cached results instantly via SHA-256 hash matching.
+
+**3D Cluster Topology:** Interactive Three.js visualization of the full resource graph with ownership edges, health-based coloring (failing resources glow red), and search/fullscreen/inspect.
+
+## Thoughts on the Domain
+
+The most interesting aspect is that support bundles are *snapshots* — you see the aftermath, not the sequence of events. The real challenge isn't detecting that a pod is crashing (that's obvious), but reconstructing *why* — tracing from a service with no endpoints, to a missing label, to a deployment that was updated with the wrong selector. AI excels here because it can reason about relationships that span multiple resource types and namespaces simultaneously.
+
+The next frontier is connecting bundles to the vendor's known architecture. If the ISV knows their app needs Redis, the analyzer should immediately check for Redis health without being told — turning generic K8s analysis into application-aware diagnostics.

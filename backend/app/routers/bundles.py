@@ -765,6 +765,7 @@ async def list_bundles():
         # Attach analysis stats if available
         analysis = _analyses.get(bundle.id)
         if analysis:
+            data["status"] = "completed"  # Fix stale status
             data["analysis"] = {
                 "health_score": analysis.cluster_health.score,
                 "issues": [{"severity": i.severity.value, "title": i.title} for i in analysis.issues],

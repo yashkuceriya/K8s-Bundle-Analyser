@@ -12,39 +12,71 @@ _collection = None
 
 
 def _get_collection():
-    """Lazy-init ChromaDB collection with OpenAI embeddings."""
+    """Lazy-init ChromaDB collection with best available embeddings.
+
+    Priority: Voyage AI (best for code/logs) > OpenAI > ChromaDB default.
+    """
     global _client, _collection
     if _collection is not None:
         return _collection
     try:
         import chromadb
-        from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
 
         persist_dir = os.environ.get("CHROMA_PERSIST_DIR", "./data/chroma")
         _client = chromadb.PersistentClient(path=persist_dir)
 
-        # Use OpenAI embeddings if key available, otherwise default
-        openai_key = os.environ.get("OPENAI_API_KEY", "")
-        if openai_key:
-            embedding_fn = OpenAIEmbeddingFunction(
-                api_key=openai_key,
-                model_name="text-embedding-3-small",
-            )
+        embedding_fn = None
+        collection_name = "bundle_chunks"
+
+        # Priority 1: Voyage AI — excellent for technical/code content
+        voyage_key = os.environ.get("VOYAGE_API_KEY", "")
+        if voyage_key:
+            try:
+                import voyageai
+
+                class VoyageEmbeddingFunction:
+                    def __init__(self, api_key: str, model: str = "voyage-code-3"):
+                        self._client = voyageai.Client(api_key=api_key)
+                        self._model = model
+
+                    def __call__(self, input: list[str]) -> list[list[float]]:
+                        result = self._client.embed(input, model=self._model, input_type="document")
+                        return result.embeddings
+
+                embedding_fn = VoyageEmbeddingFunction(api_key=voyage_key)
+                collection_name = "bundle_chunks_voyage"
+                logger.info("Using Voyage AI voyage-code-3 embeddings")
+            except ImportError:
+                logger.info("voyageai package not installed, falling back")
+
+        # Priority 2: OpenAI embeddings
+        if embedding_fn is None:
+            openai_key = os.environ.get("OPENAI_API_KEY", "")
+            if openai_key:
+                from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
+
+                embedding_fn = OpenAIEmbeddingFunction(
+                    api_key=openai_key,
+                    model_name="text-embedding-3-small",
+                )
+                collection_name = "bundle_chunks_openai"
+                logger.info("Using OpenAI text-embedding-3-small embeddings")
+
+        # Create collection
+        if embedding_fn:
             _collection = _client.get_or_create_collection(
-                name="bundle_chunks_openai",
+                name=collection_name,
                 embedding_function=embedding_fn,
                 metadata={"hnsw:space": "cosine"},
             )
-            logger.info(
-                "ChromaDB using OpenAI text-embedding-3-small (persist=%s, count=%d)", persist_dir, _collection.count()
-            )
         else:
             _collection = _client.get_or_create_collection(
-                name="bundle_chunks",
+                name=collection_name,
                 metadata={"hnsw:space": "cosine"},
             )
-            logger.info("ChromaDB using default embeddings (persist=%s, count=%d)", persist_dir, _collection.count())
+            logger.info("Using ChromaDB default embeddings")
 
+        logger.info("ChromaDB ready (persist=%s, count=%d)", persist_dir, _collection.count())
         return _collection
     except Exception as e:
         logger.warning("ChromaDB unavailable: %s", e)

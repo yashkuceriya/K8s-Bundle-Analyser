@@ -35,7 +35,7 @@ export default function HealthScore({ score, size = 160, trend }: HealthScorePro
 
   return (
     <div className="flex flex-col items-center gap-1">
-      <div className="relative" style={{ width: size, height: size }}>
+      <div className="relative" style={{ width: size, height: size, filter: `drop-shadow(0 0 ${size/6}px ${color}20)` }}>
         <svg width={size} height={size} className="-rotate-90">
           <circle
             cx={size / 2}

@@ -145,10 +145,10 @@ export default function Dashboard() {
           {/* Hero */}
           <div className="space-y-4">
             <h1 className="text-5xl font-bold text-white leading-[1.1]">
-              K8s Bundle<br />Analyzer
+              Support Bundle<br />Intelligence
             </h1>
             <p className="text-sm text-gray-400 leading-relaxed max-w-sm">
-              Upload cluster diagnostic bundles for instant analysis, pattern matching, and health scoring.
+              Automated Kubernetes diagnostics. Upload a troubleshoot.sh support bundle for instant root cause analysis, health scoring, and remediation playbooks.
             </p>
             <div className="flex items-center gap-10 pt-4">
               <div>
@@ -282,7 +282,7 @@ export default function Dashboard() {
                 const analysis = bundle.analysis;
                 const criticalCount = analysis?.issues?.filter((i) => i.severity === 'critical' || i.severity === 'error').length ?? 0;
                 const warningCount = analysis?.issues?.filter((i) => i.severity === 'warning').length ?? 0;
-                const optimizationCount = analysis?.issues?.filter((i) => i.severity === 'info' || i.severity === 'optimization').length ?? 0;
+                const infoCount = analysis?.issues?.filter((i) => i.severity === 'info').length ?? 0;
                 const healthScore = analysis?.health_score ?? null;
 
                 return (
@@ -343,8 +343,8 @@ export default function Dashboard() {
                           <p className="text-gray-500 text-[10px]">Warnings</p>
                         </div>
                         <div className="text-center">
-                          <p className="text-accent-blue font-semibold">{bundle.status === 'completed' ? optimizationCount : '--'}</p>
-                          <p className="text-gray-500 text-[10px]">Optimizations</p>
+                          <p className="text-accent-blue font-semibold">{bundle.status === 'completed' ? infoCount : '--'}</p>
+                          <p className="text-gray-500 text-[10px]">Info</p>
                         </div>
                       </div>
                     </div>

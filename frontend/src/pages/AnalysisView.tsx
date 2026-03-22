@@ -320,7 +320,7 @@ function OverviewTab({
   return (
     <div className="space-y-6 max-w-screen-2xl">
       {/* Stats Row — single glanceable strip */}
-      <div className="grid grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         {/* Health Score */}
         <div className="col-span-1 bg-navy-800 border border-navy-700 rounded-xl p-5 flex flex-col items-center justify-center">
           <HealthScore score={health.score} size={120} trend={historyData.length > 1 ? historyData.map(h => h.health_score) : undefined} />

@@ -209,50 +209,23 @@ export default function AnalysisView() {
               className="w-full py-2.5 bg-surface-container hover:bg-surface-container-high text-on-surface-variant font-bold rounded-lg text-[0.6875rem] uppercase tracking-wider transition-all flex items-center justify-center gap-2 border border-outline-variant/20"
             >
               <Box size={14} />
-              Generate Preflight
+              Preflight Export
+            </button>
+
+            <button
+              onClick={() => setPlaybookOpen(true)}
+              className="w-full py-2.5 bg-surface-container hover:bg-surface-container-high text-on-surface-variant font-bold rounded-lg text-[0.6875rem] uppercase tracking-wider transition-all flex items-center justify-center gap-2 border border-outline-variant/20"
+            >
+              <FileText size={14} />
+              Export Playbook
             </button>
 
             <p className="text-[9px] text-outline text-center mt-2">Press 1-6 to switch tabs</p>
-            <a href="#" className="sidebar-item sidebar-item-inactive w-full mt-1"><FileText size={16} /> Docs</a>
           </div>
         </aside>
 
         {/* Main Content */}
         <div className="flex-1 flex flex-col min-w-0 ml-64">
-          {/* Top Tab Bar */}
-          <div className="border-b border-outline-variant/10 px-8 flex items-center justify-between bg-surface-container/30">
-            <div className="flex gap-8">
-              {tabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={clsx(
-                    'text-lg font-bold font-headline pb-4 pt-4 transition-colors',
-                    activeTab === tab.id
-                      ? 'text-on-surface border-b-2 border-primary'
-                      : 'text-on-surface-variant/60 hover:text-on-surface'
-                  )}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setPlaybookOpen(true)}
-                className="px-4 py-2 bg-surface-container text-on-surface rounded-lg text-xs font-bold border border-outline-variant/20 hover:bg-surface-container-high transition-all"
-              >
-                Export Playbook
-              </button>
-              <button
-                onClick={() => setPreflightOpen(true)}
-                className="px-4 py-2 bg-primary-container text-white rounded-lg text-xs font-bold hover:brightness-110 transition-all shadow-lg shadow-primary-container/20"
-              >
-                Preflight Export
-              </button>
-            </div>
-          </div>
-
           {/* Tab Content */}
           <main className="flex-1 p-8 overflow-auto bg-surface-container-lowest/30">
             {activeTab === 'overview' && (

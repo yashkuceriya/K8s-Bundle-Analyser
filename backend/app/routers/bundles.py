@@ -755,10 +755,22 @@ async def upload_bundle(file: UploadFile = File(...)):
     return bundle_info
 
 
-@router.get("/", response_model=list[BundleInfo])
+@router.get("/")
 async def list_bundles():
-    """List all uploaded bundles."""
-    return list(_bundles.values())
+    """List all uploaded bundles with analysis summary stats."""
+    results = []
+    for bundle in _bundles.values():
+        data = bundle.model_dump(mode="json")
+        data["file_path"] = ""  # Don't expose file paths
+        # Attach analysis stats if available
+        analysis = _analyses.get(bundle.id)
+        if analysis:
+            data["analysis"] = {
+                "health_score": analysis.cluster_health.score,
+                "issues": [{"severity": i.severity.value, "title": i.title} for i in analysis.issues],
+            }
+        results.append(data)
+    return results
 
 
 @router.get("/search/cross-bundle", tags=["Search"])

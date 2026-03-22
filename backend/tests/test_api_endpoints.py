@@ -1,7 +1,8 @@
 """Integration tests for the FastAPI endpoints."""
+
 import io
-import tarfile
 import json
+import tarfile
 
 import pytest
 from fastapi.testclient import TestClient
@@ -26,23 +27,33 @@ def sample_bundle_bytes():
         tar.addfile(info, io.BytesIO(version_data))
 
         # cluster-resources/nodes.json
-        nodes_data = json.dumps({"items": [
-            {"metadata": {"name": "node-1"}, "status": {"conditions": [{"type": "Ready", "status": "True"}]}}
-        ]}).encode()
+        nodes_data = json.dumps(
+            {
+                "items": [
+                    {"metadata": {"name": "node-1"}, "status": {"conditions": [{"type": "Ready", "status": "True"}]}}
+                ]
+            }
+        ).encode()
         info = tarfile.TarInfo(name="test-bundle/cluster-resources/nodes.json")
         info.size = len(nodes_data)
         tar.addfile(info, io.BytesIO(nodes_data))
 
         # cluster-resources/pods/default.json
-        pods_data = json.dumps({"items": [
+        pods_data = json.dumps(
             {
-                "metadata": {"name": "test-pod", "namespace": "default"},
-                "status": {
-                    "phase": "Running",
-                    "containerStatuses": [{"name": "app", "restartCount": 0, "state": {"running": {}}, "image": "nginx:1.25"}],
-                },
+                "items": [
+                    {
+                        "metadata": {"name": "test-pod", "namespace": "default"},
+                        "status": {
+                            "phase": "Running",
+                            "containerStatuses": [
+                                {"name": "app", "restartCount": 0, "state": {"running": {}}, "image": "nginx:1.25"}
+                            ],
+                        },
+                    }
+                ]
             }
-        ]}).encode()
+        ).encode()
         info = tarfile.TarInfo(name="test-bundle/cluster-resources/pods/default.json")
         info.size = len(pods_data)
         tar.addfile(info, io.BytesIO(pods_data))

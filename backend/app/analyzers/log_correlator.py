@@ -53,13 +53,15 @@ class LogCorrelator:
                 if any(kw in reason for kw in ("failed", "error", "oom", "crash", "backoff")):
                     severity = "critical"
 
-            timeline.append(TimelineEvent(
-                timestamp=ts,
-                type=f"event/{event.get('reason', 'Unknown')}",
-                message=event.get("message", "")[:500],
-                severity=severity,
-                resource=resource or None,
-            ))
+            timeline.append(
+                TimelineEvent(
+                    timestamp=ts,
+                    type=f"event/{event.get('reason', 'Unknown')}",
+                    message=event.get("message", "")[:500],
+                    severity=severity,
+                    resource=resource or None,
+                )
+            )
 
         # Add error/warning log entries to timeline
         error_logs = [l for l in logs if l.get("level") in ("error", "warn")]
@@ -70,27 +72,27 @@ class LogCorrelator:
 
             source = log.get("source", "")
             pod = log.get("pod")
-            ns = log.get("namespace")
+            log.get("namespace")
             resource = f"pod/{pod}" if pod else None
 
             severity = "warning" if log.get("level") == "warn" else "critical"
 
-            timeline.append(TimelineEvent(
-                timestamp=ts,
-                type=f"log/{log.get('level', 'unknown')}",
-                message=f"[{source}] {log.get('message', '')[:400]}",
-                severity=severity,
-                resource=resource,
-            ))
+            timeline.append(
+                TimelineEvent(
+                    timestamp=ts,
+                    type=f"log/{log.get('level', 'unknown')}",
+                    message=f"[{source}] {log.get('message', '')[:400]}",
+                    severity=severity,
+                    resource=resource,
+                )
+            )
 
         # Sort by timestamp
         timeline.sort(key=lambda e: e.timestamp)
 
         return timeline
 
-    def build_topology(
-        self, parsed_data: dict[str, Any]
-    ) -> tuple[list[TopologyNode], list[TopologyEdge]]:
+    def build_topology(self, parsed_data: dict[str, Any]) -> tuple[list[TopologyNode], list[TopologyEdge]]:
         """
         Build a graph of cluster resources with health status.
 
@@ -111,20 +113,18 @@ class LogCorrelator:
             seen_ids.add(node_id)
 
             status = self._node_health(node)
-            topo_nodes.append(TopologyNode(
-                id=node_id,
-                label=node_name,
-                type="node",
-                status=status,
-                metadata={
-                    "kubeletVersion": node.get("status", {})
-                    .get("nodeInfo", {})
-                    .get("kubeletVersion", ""),
-                    "os": node.get("status", {})
-                    .get("nodeInfo", {})
-                    .get("osImage", ""),
-                },
-            ))
+            topo_nodes.append(
+                TopologyNode(
+                    id=node_id,
+                    label=node_name,
+                    type="node",
+                    status=status,
+                    metadata={
+                        "kubeletVersion": node.get("status", {}).get("nodeInfo", {}).get("kubeletVersion", ""),
+                        "os": node.get("status", {}).get("nodeInfo", {}).get("osImage", ""),
+                    },
+                )
+            )
 
         # Add namespaces
         namespaces_seen: set[str] = set()
@@ -143,13 +143,15 @@ class LogCorrelator:
             if ns_id in seen_ids:
                 continue
             seen_ids.add(ns_id)
-            topo_nodes.append(TopologyNode(
-                id=ns_id,
-                label=ns_name,
-                type="namespace",
-                status="healthy",
-                namespace=ns_name,
-            ))
+            topo_nodes.append(
+                TopologyNode(
+                    id=ns_id,
+                    label=ns_name,
+                    type="namespace",
+                    status="healthy",
+                    namespace=ns_name,
+                )
+            )
 
         # Add deployments
         for deploy in parsed_data.get("deployments", []):
@@ -171,17 +173,19 @@ class LogCorrelator:
             elif ready < desired:
                 deploy_status = "warning"
 
-            topo_nodes.append(TopologyNode(
-                id=deploy_id,
-                label=name,
-                type="deployment",
-                status=deploy_status,
-                namespace=ns,
-                metadata={
-                    "replicas": desired,
-                    "readyReplicas": ready,
-                },
-            ))
+            topo_nodes.append(
+                TopologyNode(
+                    id=deploy_id,
+                    label=name,
+                    type="deployment",
+                    status=deploy_status,
+                    namespace=ns,
+                    metadata={
+                        "replicas": desired,
+                        "readyReplicas": ready,
+                    },
+                )
+            )
 
         # Add services
         for svc in parsed_data.get("services", []):
@@ -193,17 +197,19 @@ class LogCorrelator:
                 continue
             seen_ids.add(svc_id)
 
-            topo_nodes.append(TopologyNode(
-                id=svc_id,
-                label=name,
-                type="service",
-                status="healthy",
-                namespace=ns,
-                metadata={
-                    "type": svc.get("spec", {}).get("type", "ClusterIP"),
-                    "clusterIP": svc.get("spec", {}).get("clusterIP", ""),
-                },
-            ))
+            topo_nodes.append(
+                TopologyNode(
+                    id=svc_id,
+                    label=name,
+                    type="service",
+                    status="healthy",
+                    namespace=ns,
+                    metadata={
+                        "type": svc.get("spec", {}).get("type", "ClusterIP"),
+                        "clusterIP": svc.get("spec", {}).get("clusterIP", ""),
+                    },
+                )
+            )
 
         # Add StatefulSets
         for sts in parsed_data.get("statefulsets", []):
@@ -223,14 +229,16 @@ class LogCorrelator:
             elif ready < desired:
                 sts_status = "warning"
 
-            topo_nodes.append(TopologyNode(
-                id=sts_id,
-                label=name,
-                type="statefulset",
-                status=sts_status,
-                namespace=ns,
-                metadata={"replicas": desired, "readyReplicas": ready},
-            ))
+            topo_nodes.append(
+                TopologyNode(
+                    id=sts_id,
+                    label=name,
+                    type="statefulset",
+                    status=sts_status,
+                    namespace=ns,
+                    metadata={"replicas": desired, "readyReplicas": ready},
+                )
+            )
 
         # Add DaemonSets
         for ds in parsed_data.get("daemonsets", []):
@@ -250,14 +258,16 @@ class LogCorrelator:
             elif ready < desired:
                 ds_status = "warning"
 
-            topo_nodes.append(TopologyNode(
-                id=ds_id,
-                label=name,
-                type="daemonset",
-                status=ds_status,
-                namespace=ns,
-                metadata={"desired": desired, "ready": ready},
-            ))
+            topo_nodes.append(
+                TopologyNode(
+                    id=ds_id,
+                    label=name,
+                    type="daemonset",
+                    status=ds_status,
+                    namespace=ns,
+                    metadata={"desired": desired, "ready": ready},
+                )
+            )
 
         # Add Jobs
         for job in parsed_data.get("jobs", []):
@@ -277,14 +287,16 @@ class LogCorrelator:
             elif succeeded == 0:
                 job_status = "warning"
 
-            topo_nodes.append(TopologyNode(
-                id=job_id,
-                label=name,
-                type="job",
-                status=job_status,
-                namespace=ns,
-                metadata={"succeeded": succeeded, "failed": failed},
-            ))
+            topo_nodes.append(
+                TopologyNode(
+                    id=job_id,
+                    label=name,
+                    type="job",
+                    status=job_status,
+                    namespace=ns,
+                    metadata={"succeeded": succeeded, "failed": failed},
+                )
+            )
 
         # Add Ingresses
         for ing in parsed_data.get("ingresses", []):
@@ -296,14 +308,16 @@ class LogCorrelator:
                 continue
             seen_ids.add(ing_id)
 
-            topo_nodes.append(TopologyNode(
-                id=ing_id,
-                label=name,
-                type="ingress",
-                status="healthy",
-                namespace=ns,
-                metadata={},
-            ))
+            topo_nodes.append(
+                TopologyNode(
+                    id=ing_id,
+                    label=name,
+                    type="ingress",
+                    status="healthy",
+                    namespace=ns,
+                    metadata={},
+                )
+            )
 
         # Add pods and create edges
         for pod in parsed_data.get("pods", []):
@@ -316,27 +330,31 @@ class LogCorrelator:
             seen_ids.add(pod_id)
 
             pod_status = self._pod_health(pod)
-            topo_nodes.append(TopologyNode(
-                id=pod_id,
-                label=name,
-                type="pod",
-                status=pod_status,
-                namespace=ns,
-                metadata={
-                    "phase": pod.get("status", {}).get("phase", "Unknown"),
-                    "nodeName": pod.get("spec", {}).get("nodeName", ""),
-                },
-            ))
+            topo_nodes.append(
+                TopologyNode(
+                    id=pod_id,
+                    label=name,
+                    type="pod",
+                    status=pod_status,
+                    namespace=ns,
+                    metadata={
+                        "phase": pod.get("status", {}).get("phase", "Unknown"),
+                        "nodeName": pod.get("spec", {}).get("nodeName", ""),
+                    },
+                )
+            )
 
             # Edge: node -> pod (scheduled on)
             node_name = pod.get("spec", {}).get("nodeName", "")
             if node_name:
                 node_id = f"node/{node_name}"
-                topo_edges.append(TopologyEdge(
-                    source=node_id,
-                    target=pod_id,
-                    label="runs",
-                ))
+                topo_edges.append(
+                    TopologyEdge(
+                        source=node_id,
+                        target=pod_id,
+                        label="runs",
+                    )
+                )
 
             # Edge: deployment -> pod (ownership)
             owner_refs = meta.get("ownerReferences", []) or []
@@ -351,35 +369,43 @@ class LogCorrelator:
                         deploy_candidate = parts[0]
                         deploy_id = f"deployment/{ns}/{deploy_candidate}"
                         if deploy_id in seen_ids:
-                            topo_edges.append(TopologyEdge(
-                                source=deploy_id,
-                                target=pod_id,
-                                label="owns",
-                            ))
+                            topo_edges.append(
+                                TopologyEdge(
+                                    source=deploy_id,
+                                    target=pod_id,
+                                    label="owns",
+                                )
+                            )
                 elif owner_kind == "StatefulSet":
                     sts_id = f"statefulset/{ns}/{owner_name}"
                     if sts_id in seen_ids:
-                        topo_edges.append(TopologyEdge(
-                            source=sts_id,
-                            target=pod_id,
-                            label="owns",
-                        ))
+                        topo_edges.append(
+                            TopologyEdge(
+                                source=sts_id,
+                                target=pod_id,
+                                label="owns",
+                            )
+                        )
                 elif owner_kind == "DaemonSet":
                     ds_id = f"daemonset/{ns}/{owner_name}"
                     if ds_id in seen_ids:
-                        topo_edges.append(TopologyEdge(
-                            source=ds_id,
-                            target=pod_id,
-                            label="owns",
-                        ))
+                        topo_edges.append(
+                            TopologyEdge(
+                                source=ds_id,
+                                target=pod_id,
+                                label="owns",
+                            )
+                        )
                 elif owner_kind == "Job":
                     job_id = f"job/{ns}/{owner_name}"
                     if job_id in seen_ids:
-                        topo_edges.append(TopologyEdge(
-                            source=job_id,
-                            target=pod_id,
-                            label="owns",
-                        ))
+                        topo_edges.append(
+                            TopologyEdge(
+                                source=job_id,
+                                target=pod_id,
+                                label="owns",
+                            )
+                        )
 
         # Edge: service -> pod (selector matching)
         for svc in parsed_data.get("services", []):
@@ -402,11 +428,13 @@ class LogCorrelator:
                 if all(pod_labels.get(k) == v for k, v in selector.items()):
                     pod_name = pod_meta.get("name", "unknown")
                     pod_id = f"pod/{pod_ns}/{pod_name}"
-                    topo_edges.append(TopologyEdge(
-                        source=svc_id,
-                        target=pod_id,
-                        label="selects",
-                    ))
+                    topo_edges.append(
+                        TopologyEdge(
+                            source=svc_id,
+                            target=pod_id,
+                            label="selects",
+                        )
+                    )
 
         # Edge: ingress -> service (backend)
         for ing in parsed_data.get("ingresses", []):
@@ -421,11 +449,13 @@ class LogCorrelator:
                     svc_name = backend.get("service", {}).get("name", backend.get("serviceName", ""))
                     if svc_name:
                         svc_id = f"service/{ing_ns}/{svc_name}"
-                        topo_edges.append(TopologyEdge(
-                            source=ing_id,
-                            target=svc_id,
-                            label="routes",
-                        ))
+                        topo_edges.append(
+                            TopologyEdge(
+                                source=ing_id,
+                                target=svc_id,
+                                label="routes",
+                            )
+                        )
 
         logger.info("Built topology: %d nodes, %d edges", len(topo_nodes), len(topo_edges))
         return topo_nodes, topo_edges
@@ -469,12 +499,14 @@ class LogCorrelator:
                 f"({severity_summary}). Event types: {', '.join(event_types[:5])}."
             )
 
-            groups.append(CorrelationGroup(
-                title=f"Events on {resource}",
-                events=sorted_events,
-                explanation=explanation,
-                sparkline_data=sparkline_data,
-            ))
+            groups.append(
+                CorrelationGroup(
+                    title=f"Events on {resource}",
+                    events=sorted_events,
+                    explanation=explanation,
+                    sparkline_data=sparkline_data,
+                )
+            )
 
         logger.info("Built %d correlation groups", len(groups))
         return groups
@@ -513,9 +545,15 @@ class LogCorrelator:
             elif phase == "Failed":
                 status = "critical"
 
-            dots.append(ResourceHealthDot(
-                id=pod_id, name=name, type="pod", namespace=ns, status=status,
-            ))
+            dots.append(
+                ResourceHealthDot(
+                    id=pod_id,
+                    name=name,
+                    type="pod",
+                    namespace=ns,
+                    status=status,
+                )
+            )
 
         # Nodes: check conditions for Ready
         for node in parsed_data.get("nodes", []):
@@ -538,9 +576,15 @@ class LogCorrelator:
                         status = "critical"
                     break
 
-            dots.append(ResourceHealthDot(
-                id=node_id, name=node_name, type="node", namespace="", status=status,
-            ))
+            dots.append(
+                ResourceHealthDot(
+                    id=node_id,
+                    name=node_name,
+                    type="node",
+                    namespace="",
+                    status=status,
+                )
+            )
 
         # Deployments
         for deploy in parsed_data.get("deployments", []):
@@ -558,9 +602,15 @@ class LogCorrelator:
             elif ready < desired:
                 status = "warning"
 
-            dots.append(ResourceHealthDot(
-                id=deploy_id, name=name, type="deployment", namespace=ns, status=status,
-            ))
+            dots.append(
+                ResourceHealthDot(
+                    id=deploy_id,
+                    name=name,
+                    type="deployment",
+                    namespace=ns,
+                    status=status,
+                )
+            )
 
         # Services
         for svc in parsed_data.get("services", []):
@@ -569,9 +619,15 @@ class LogCorrelator:
             ns = meta.get("namespace", "default")
             svc_id = f"service/{ns}/{name}"
 
-            dots.append(ResourceHealthDot(
-                id=svc_id, name=name, type="service", namespace=ns, status="healthy",
-            ))
+            dots.append(
+                ResourceHealthDot(
+                    id=svc_id,
+                    name=name,
+                    type="service",
+                    namespace=ns,
+                    status="healthy",
+                )
+            )
 
         # StatefulSets
         for sts in parsed_data.get("statefulsets", []):
@@ -586,9 +642,15 @@ class LogCorrelator:
                 status = "critical"
             elif ready < desired:
                 status = "warning"
-            dots.append(ResourceHealthDot(
-                id=sts_id, name=name, type="statefulset", namespace=ns, status=status,
-            ))
+            dots.append(
+                ResourceHealthDot(
+                    id=sts_id,
+                    name=name,
+                    type="statefulset",
+                    namespace=ns,
+                    status=status,
+                )
+            )
 
         # DaemonSets
         for ds in parsed_data.get("daemonsets", []):
@@ -603,9 +665,15 @@ class LogCorrelator:
                 status = "critical"
             elif ready < desired:
                 status = "warning"
-            dots.append(ResourceHealthDot(
-                id=ds_id, name=name, type="daemonset", namespace=ns, status=status,
-            ))
+            dots.append(
+                ResourceHealthDot(
+                    id=ds_id,
+                    name=name,
+                    type="daemonset",
+                    namespace=ns,
+                    status=status,
+                )
+            )
 
         # Jobs
         for job in parsed_data.get("jobs", []):
@@ -620,9 +688,15 @@ class LogCorrelator:
                 status = "critical"
             elif succeeded == 0:
                 status = "warning"
-            dots.append(ResourceHealthDot(
-                id=job_id, name=name, type="job", namespace=ns, status=status,
-            ))
+            dots.append(
+                ResourceHealthDot(
+                    id=job_id,
+                    name=name,
+                    type="job",
+                    namespace=ns,
+                    status=status,
+                )
+            )
 
         logger.info("Built %d resource health dots", len(dots))
         return dots
@@ -645,13 +719,15 @@ class LogCorrelator:
         bucket_size = max(1, len(timestamps) // num_buckets)
         sparkline: list[dict] = []
         for i in range(0, len(timestamps), bucket_size):
-            chunk = timestamps[i:i + bucket_size]
-            sparkline.append({
-                "bucket": len(sparkline),
-                "count": len(chunk),
-                "start": chunk[0],
-                "end": chunk[-1],
-            })
+            chunk = timestamps[i : i + bucket_size]
+            sparkline.append(
+                {
+                    "bucket": len(sparkline),
+                    "count": len(chunk),
+                    "start": chunk[0],
+                    "end": chunk[-1],
+                }
+            )
 
         return sparkline
 

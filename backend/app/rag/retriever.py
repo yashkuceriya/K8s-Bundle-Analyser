@@ -1,8 +1,8 @@
 """High-level retriever that combines vector search with metadata for RAG."""
+
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from app.rag.vector_store import retrieve
 
@@ -22,7 +22,7 @@ def retrieve_for_question(question: str, bundle_id: str, n_results: int = 10) ->
     q_lower = question.lower()
     for chunk in chunks:
         boost = 0.0
-        content_lower = chunk["content"].lower()
+        chunk["content"].lower()
         meta = chunk.get("metadata", {})
 
         # Boost error/critical chunks for problem questions

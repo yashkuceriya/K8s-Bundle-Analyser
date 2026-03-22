@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -22,7 +21,7 @@ class BundleInfo(BaseModel):
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     filename: str
-    upload_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    upload_time: datetime = Field(default_factory=lambda: datetime.now(UTC))
     status: BundleStatus = BundleStatus.uploaded
     file_path: str = Field(exclude=True, default="")
 
@@ -40,7 +39,7 @@ class ProposedFix(BaseModel):
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     description: str
-    command: Optional[str] = None
+    command: str | None = None
     is_automated: bool = False
 
 
@@ -68,14 +67,14 @@ class Issue(BaseModel):
     severity: Severity
     title: str
     category: str  # pod-health, networking, storage, configuration, security, resource-usage
-    resource: Optional[str] = None
-    namespace: Optional[str] = None
+    resource: str | None = None
+    namespace: str | None = None
     description: str
     evidence: list[str] = Field(default_factory=list)
     remediation: str
-    ai_confidence: Optional[float] = None  # 0-1
+    ai_confidence: float | None = None  # 0-1
     proposed_fixes: list[ProposedFix] = []
-    ai_explanation: Optional[AIExplanation] = None
+    ai_explanation: AIExplanation | None = None
     relevant_log_snippets: list[LogSnippet] = []
 
 
@@ -94,12 +93,12 @@ class ClusterHealth(BaseModel):
 class LogEntry(BaseModel):
     """A single parsed log line from a pod container."""
 
-    timestamp: Optional[str] = None
+    timestamp: str | None = None
     source: str
     level: str  # error, warn, info
     message: str
-    namespace: Optional[str] = None
-    pod: Optional[str] = None
+    namespace: str | None = None
+    pod: str | None = None
 
 
 class TopologyNode(BaseModel):
@@ -109,7 +108,7 @@ class TopologyNode(BaseModel):
     label: str
     type: str  # node, namespace, deployment, pod, service
     status: str = "unknown"  # healthy, warning, critical, unknown
-    namespace: Optional[str] = None
+    namespace: str | None = None
     metadata: dict = Field(default_factory=dict)
 
 
@@ -118,7 +117,7 @@ class TopologyEdge(BaseModel):
 
     source: str
     target: str
-    label: Optional[str] = None
+    label: str | None = None
 
 
 class TimelineEvent(BaseModel):
@@ -128,7 +127,7 @@ class TimelineEvent(BaseModel):
     type: str
     message: str
     severity: str
-    resource: Optional[str] = None
+    resource: str | None = None
 
 
 class CorrelationGroup(BaseModel):
@@ -162,7 +161,7 @@ class AnalysisResult(BaseModel):
     topology_nodes: list[TopologyNode] = Field(default_factory=list)
     topology_edges: list[TopologyEdge] = Field(default_factory=list)
     summary: str = ""
-    analyzed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    analyzed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     raw_events: list[dict] = Field(default_factory=list)
     correlations: list[CorrelationGroup] = []
     resource_health: list[ResourceHealthDot] = []
@@ -171,6 +170,7 @@ class AnalysisResult(BaseModel):
 
 class AnalysisHistoryEntry(BaseModel):
     """Summary of a single analysis run for history listing."""
+
     analyzed_at: datetime
     health_score: int
     critical_count: int
@@ -181,13 +181,15 @@ class AnalysisHistoryEntry(BaseModel):
 
 class CompareRequest(BaseModel):
     """Request body for comparing two analyses."""
+
     left_bundle_id: str
-    left_timestamp: Optional[str] = None
+    left_timestamp: str | None = None
     right_bundle_id: str
-    right_timestamp: Optional[str] = None
+    right_timestamp: str | None = None
 
 
 class CompareResponse(BaseModel):
     """Response body with two analyses for comparison."""
+
     left: AnalysisResult
     right: AnalysisResult

@@ -29,7 +29,14 @@ class BundleParser:
             return self.bundle_path
 
         # Check if the extracted path itself has the expected structure
-        expected_dirs = {"cluster-info", "cluster-resources", "pod-logs", "host-collectors", "analysis.json", "version.yaml"}
+        expected_dirs = {
+            "cluster-info",
+            "cluster-resources",
+            "pod-logs",
+            "host-collectors",
+            "analysis.json",
+            "version.yaml",
+        }
         children = {p.name for p in self.bundle_path.iterdir()} if self.bundle_path.is_dir() else set()
 
         if children & expected_dirs:
@@ -128,13 +135,17 @@ class BundleParser:
 
         # Summary counts
         logger.info(
-            "Parsed: %d pods, %d deploys, %d svcs, %d nodes, %d events, %d logs, "
-            "%d sts, %d ds, %d jobs, %d ingresses",
-            len(data["pods"]), len(data["deployments"]),
-            len(data["services"]), len(data["nodes"]),
-            len(data["events"]), len(data["logs"]),
-            len(data["statefulsets"]), len(data["daemonsets"]),
-            len(data["jobs"]), len(data["ingresses"]),
+            "Parsed: %d pods, %d deploys, %d svcs, %d nodes, %d events, %d logs, %d sts, %d ds, %d jobs, %d ingresses",
+            len(data["pods"]),
+            len(data["deployments"]),
+            len(data["services"]),
+            len(data["nodes"]),
+            len(data["events"]),
+            len(data["logs"]),
+            len(data["statefulsets"]),
+            len(data["daemonsets"]),
+            len(data["jobs"]),
+            len(data["ingresses"]),
         )
 
         return data
@@ -143,7 +154,7 @@ class BundleParser:
         """Safely parse a single JSON file."""
         try:
             if path.exists() and path.is_file():
-                with open(path, "r", encoding="utf-8", errors="replace") as f:
+                with open(path, encoding="utf-8", errors="replace") as f:
                     return json.load(f)
         except (json.JSONDecodeError, OSError) as e:
             logger.warning("Could not parse %s: %s", path, e)
@@ -153,7 +164,7 @@ class BundleParser:
         """Safely parse a single YAML file."""
         try:
             if path.exists() and path.is_file():
-                with open(path, "r", encoding="utf-8", errors="replace") as f:
+                with open(path, encoding="utf-8", errors="replace") as f:
                     return yaml.safe_load(f)
         except (yaml.YAMLError, OSError) as e:
             logger.warning("Could not parse YAML %s: %s", path, e)
@@ -276,11 +287,7 @@ class BundleParser:
 
         # Sort by lastTimestamp or metadata.creationTimestamp
         def event_sort_key(ev: dict) -> str:
-            return (
-                ev.get("lastTimestamp")
-                or ev.get("eventTime")
-                or ev.get("metadata", {}).get("creationTimestamp", "")
-            )
+            return ev.get("lastTimestamp") or ev.get("eventTime") or ev.get("metadata", {}).get("creationTimestamp", "")
 
         all_events.sort(key=event_sort_key)
         return all_events
@@ -305,16 +312,18 @@ class BundleParser:
                             continue
                         container = log_file.stem
                         try:
-                            log_entries.extend(
-                                self._parse_log_file(log_file, namespace, pod_name, container)
-                            )
+                            log_entries.extend(self._parse_log_file(log_file, namespace, pod_name, container))
                         except Exception as e:
                             logger.warning("Error parsing log %s: %s", log_file, e)
 
         # Strategy 2: <pod-name>/<container>.log at bundle root (real Troubleshoot bundles)
         skip_dirs = {
-            "cluster-info", "cluster-resources", "host-collectors",
-            "execution-data", "pod-logs", "host-os-info",
+            "cluster-info",
+            "cluster-resources",
+            "host-collectors",
+            "execution-data",
+            "pod-logs",
+            "host-os-info",
         }
         if self._root.is_dir():
             for entry in self._root.iterdir():
@@ -328,21 +337,17 @@ class BundleParser:
                 for log_file in log_files:
                     container = log_file.stem.replace("-previous", "")
                     try:
-                        log_entries.extend(
-                            self._parse_log_file(log_file, "default", pod_name, container)
-                        )
+                        log_entries.extend(self._parse_log_file(log_file, "default", pod_name, container))
                     except Exception as e:
                         logger.warning("Error parsing log %s: %s", log_file, e)
 
         return log_entries
 
-    def _parse_log_file(
-        self, path: Path, namespace: str, pod_name: str, container: str
-    ) -> list[dict]:
+    def _parse_log_file(self, path: Path, namespace: str, pod_name: str, container: str) -> list[dict]:
         """Parse a single log file into structured entries."""
         entries: list[dict] = []
         try:
-            with open(path, "r", encoding="utf-8", errors="replace") as f:
+            with open(path, encoding="utf-8", errors="replace") as f:
                 # Read up to 5000 lines per file to avoid memory issues
                 for i, line in enumerate(f):
                     if i >= MAX_LOG_LINES_PER_FILE:
@@ -372,10 +377,7 @@ class BundleParser:
 
                     # Determine log level
                     line_lower = line.lower()
-                    if any(
-                        kw in line_lower
-                        for kw in ["error", "fatal", "panic", "exception", "traceback"]
-                    ):
+                    if any(kw in line_lower for kw in ["error", "fatal", "panic", "exception", "traceback"]):
                         entry["level"] = "error"
                     elif any(kw in line_lower for kw in ["warn", "warning"]):
                         entry["level"] = "warn"
@@ -399,7 +401,7 @@ class BundleParser:
 
         for txt_file in host_dir.rglob("*.txt"):
             try:
-                with open(txt_file, "r", encoding="utf-8", errors="replace") as f:
+                with open(txt_file, encoding="utf-8", errors="replace") as f:
                     content = f.read(MAX_HOST_FILE_BYTES)
                 info[txt_file.stem] = content
             except OSError:

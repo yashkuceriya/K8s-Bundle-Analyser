@@ -1,4 +1,5 @@
 """Shared test fixtures for the K8s Bundle Analyzer backend."""
+
 import pytest
 
 
@@ -66,7 +67,7 @@ def image_pull_pod():
                     "state": {
                         "waiting": {
                             "reason": "ImagePullBackOff",
-                            "message": "Back-off pulling image \"registry.example.com/frontend:v99.0.0\"",
+                            "message": 'Back-off pulling image "registry.example.com/frontend:v99.0.0"',
                         }
                     },
                     "image": "registry.example.com/frontend:v99.0.0",
@@ -164,9 +165,7 @@ def healthy_cluster_data():
         "nodes": [
             {
                 "metadata": {"name": "node-1"},
-                "status": {
-                    "conditions": [{"type": "Ready", "status": "True"}]
-                },
+                "status": {"conditions": [{"type": "Ready", "status": "True"}]},
             }
         ],
         "events": [],
@@ -365,7 +364,7 @@ def rbac_forbidden_event():
     return {
         "type": "Warning",
         "reason": "Forbidden",
-        "message": "User system:serviceaccount:default:my-app cannot list resource \"secrets\" in namespace \"kube-system\"",
+        "message": 'User system:serviceaccount:default:my-app cannot list resource "secrets" in namespace "kube-system"',
         "involvedObject": {
             "kind": "ServiceAccount",
             "name": "my-app",

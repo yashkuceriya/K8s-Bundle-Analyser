@@ -13,7 +13,12 @@ select = [
 ]
 ignore = [
     "E501",   # line too long (handled by formatter)
+    "E741",   # ambiguous variable name (single-letter vars in list comprehensions are fine)
+    "E402",   # module level import not at top (FastAPI patterns + lazy imports)
+    "B007",   # loop control variable not used (dict iteration patterns)
     "B008",   # do not perform function calls in argument defaults (FastAPI uses this)
+    "B904",   # raise from in except (adds noise without value in this codebase)
+    "UP042",  # str+Enum pattern required for Pydantic JSON serialization
 ]
 
 [tool.ruff.lint.isort]

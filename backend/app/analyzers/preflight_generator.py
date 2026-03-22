@@ -89,9 +89,7 @@ class PreflightGenerator:
                     analyzers.append(self._oom_resource_analyzer(pod_name))
 
             # Node pressure conditions
-            if category == "resource-usage" and any(
-                keyword in title for keyword in ("Pressure", "Evicted")
-            ):
+            if category == "resource-usage" and any(keyword in title for keyword in ("Pressure", "Evicted")):
                 if not has_node_pressure:
                     has_node_pressure = True
                     analyzers.append(self._node_pressure_analyzer())

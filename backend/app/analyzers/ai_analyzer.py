@@ -5,7 +5,7 @@ import logging
 import os
 from typing import Any
 
-from app.analyzers.guardrails import sanitize_text, validate_severity, validate_category, strip_html, truncate
+from app.analyzers.guardrails import sanitize_text, strip_html, truncate, validate_category, validate_severity
 from app.models import AIExplanation, Issue, ProposedFix, Severity
 
 logger = logging.getLogger(__name__)
@@ -43,6 +43,7 @@ class AIAnalyzer:
             if bundle_id:
                 try:
                     from app.rag.retriever import retrieve_for_analysis
+
                     evidence_map = retrieve_for_analysis(bundle_id, heuristic_issues, n_per_issue=4)
                     if evidence_map:
                         sections = []
@@ -164,10 +165,7 @@ BEHAVIORAL CONSTRAINTS:
             for node in nodes[:20]:
                 name = node.get("metadata", {}).get("name", "unknown")
                 conditions = node.get("status", {}).get("conditions", []) or []
-                cond_summary = ", ".join(
-                    f"{c.get('type')}={c.get('status')}"
-                    for c in conditions
-                )
+                cond_summary = ", ".join(f"{c.get('type')}={c.get('status')}" for c in conditions)
                 node_lines.append(f"- {name}: {cond_summary}")
             sections.append(f"## Nodes ({len(nodes)})\n" + "\n".join(node_lines))
 
@@ -254,7 +252,10 @@ BEHAVIORAL CONSTRAINTS:
                 # Check for running pods with issues
                 has_issue = False
                 for cs in pod.get("status", {}).get("containerStatuses", []) or []:
-                    if cs.get("restartCount", 0) > 5 or cs.get("state", {}).get("waiting", {}).get("reason") in ("CrashLoopBackOff", "ImagePullBackOff"):
+                    if cs.get("restartCount", 0) > 5 or cs.get("state", {}).get("waiting", {}).get("reason") in (
+                        "CrashLoopBackOff",
+                        "ImagePullBackOff",
+                    ):
                         has_issue = True
                         break
                 if not has_issue:
@@ -267,7 +268,9 @@ BEHAVIORAL CONSTRAINTS:
             if len(unhealthy_pods_lines) >= 20:
                 break
         if unhealthy_pods_lines:
-            sections.append(f"## Unhealthy Pod Ownership ({len(unhealthy_pods_lines)})\n" + "\n".join(unhealthy_pods_lines))
+            sections.append(
+                f"## Unhealthy Pod Ownership ({len(unhealthy_pods_lines)})\n" + "\n".join(unhealthy_pods_lines)
+            )
 
         # Ingress Routes
         ingresses = parsed_data.get("ingresses", [])
@@ -315,12 +318,8 @@ BEHAVIORAL CONSTRAINTS:
         if heuristic_issues:
             issue_lines = []
             for issue in heuristic_issues:
-                issue_lines.append(
-                    f"- [{issue.severity.value.upper()}] {issue.title}: {issue.description}"
-                )
-            sections.append(
-                f"## Heuristic Findings ({len(heuristic_issues)})\n" + "\n".join(issue_lines)
-            )
+                issue_lines.append(f"- [{issue.severity.value.upper()}] {issue.title}: {issue.description}")
+            sections.append(f"## Heuristic Findings ({len(heuristic_issues)})\n" + "\n".join(issue_lines))
 
         # Host info
         host_info = parsed_data.get("host_info", {})
@@ -341,8 +340,9 @@ BEHAVIORAL CONSTRAINTS:
 
         # Remove markdown code blocks (```json ... ``` or ``` ... ```)
         import re
-        if '```' in text:
-            code_block = re.search(r'```\w*\n(.*?)```', text, re.DOTALL)
+
+        if "```" in text:
+            code_block = re.search(r"```\w*\n(.*?)```", text, re.DOTALL)
             if code_block:
                 text = code_block.group(1).strip()
                 logger.info("Extracted JSON from code block (%d chars)", len(text))
@@ -365,8 +365,10 @@ BEHAVIORAL CONSTRAINTS:
                 depth = 0
                 end = start
                 for i in range(start, len(text)):
-                    if text[i] == '{': depth += 1
-                    elif text[i] == '}': depth -= 1
+                    if text[i] == "{":
+                        depth += 1
+                    elif text[i] == "}":
+                        depth -= 1
                     if depth == 0:
                         end = i + 1
                         break
@@ -385,7 +387,7 @@ BEHAVIORAL CONSTRAINTS:
             for line in lines:
                 stripped = line.strip()
                 if stripped.lower().startswith("summary:"):
-                    summary = stripped[len("summary:"):].strip()
+                    summary = stripped[len("summary:") :].strip()
                     current_section = "summary"
                 elif stripped.lower().startswith("insights:") or stripped.lower().startswith("insight"):
                     current_section = "insights"
@@ -436,9 +438,7 @@ BEHAVIORAL CONSTRAINTS:
             "insights": data.get("insights", []),
         }
 
-    def _fallback_analysis(
-        self, parsed_data: dict[str, Any], heuristic_issues: list[Issue]
-    ) -> dict:
+    def _fallback_analysis(self, parsed_data: dict[str, Any], heuristic_issues: list[Issue]) -> dict:
         """Generate a useful fallback analysis when the API key is not available."""
         pods = parsed_data.get("pods", [])
         nodes = parsed_data.get("nodes", [])
@@ -477,10 +477,12 @@ BEHAVIORAL CONSTRAINTS:
 
         for ns, titles in ns_issues.items():
             if len(titles) > 1:
-                correlations.append({
-                    "issues": titles[:5],
-                    "explanation": f"Multiple issues in namespace '{ns}' may be related.",
-                })
+                correlations.append(
+                    {
+                        "issues": titles[:5],
+                        "explanation": f"Multiple issues in namespace '{ns}' may be related.",
+                    }
+                )
 
         # Generate structured proposed fixes and ai_explanations for additional issues
         additional_issues: list[dict] = []
@@ -498,18 +500,18 @@ BEHAVIORAL CONSTRAINTS:
                     cmd_start = step.find("kubectl")
                     command = step[cmd_start:].strip().rstrip(".")
                     is_automated = True
-                proposed_fixes.append({
-                    "description": step,
-                    "command": command,
-                    "is_automated": is_automated,
-                })
+                proposed_fixes.append(
+                    {
+                        "description": step,
+                        "command": command,
+                        "is_automated": is_automated,
+                    }
+                )
 
             ai_explanation = {
                 "root_cause": issue.description,
                 "impact": f"{issue.severity.value.upper()} severity issue affecting {issue.resource or 'cluster'}",
-                "related_issues": [
-                    t for t in ns_issues.get(issue.namespace or "", []) if t != issue.title
-                ][:3],
+                "related_issues": [t for t in ns_issues.get(issue.namespace or "", []) if t != issue.title][:3],
             }
 
             # Attach these to the issue object directly
@@ -523,13 +525,19 @@ BEHAVIORAL CONSTRAINTS:
         if pods:
             not_running = total - running
             if not_running > 0:
-                insights.append(f"{not_running} out of {total} pod(s) are not in Running/Succeeded state, indicating potential scheduling or configuration issues.")
+                insights.append(
+                    f"{not_running} out of {total} pod(s) are not in Running/Succeeded state, indicating potential scheduling or configuration issues."
+                )
             else:
                 insights.append(f"All {total} pod(s) are running successfully.")
         if warning_events > 0:
-            insights.append(f"{warning_events} warning event(s) detected which may indicate transient or persistent cluster problems.")
+            insights.append(
+                f"{warning_events} warning event(s) detected which may indicate transient or persistent cluster problems."
+            )
         if critical_count > 0:
-            insights.append(f"{critical_count} critical issue(s) require immediate attention to prevent service disruption.")
+            insights.append(
+                f"{critical_count} critical issue(s) require immediate attention to prevent service disruption."
+            )
         if not insights:
             insights.append("No significant issues detected in the cluster.")
         # Ensure 3-5 insights

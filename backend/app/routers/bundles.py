@@ -7,17 +7,23 @@ import logging
 import shutil
 import tarfile
 import uuid
-from datetime import datetime, timezone
+from collections import OrderedDict
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, UploadFile, File
-from pydantic import BaseModel
-
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, PlainTextResponse
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
+from app.analyzers.ai_analyzer import AIAnalyzer
+from app.analyzers.chat import BundleChat
+from app.analyzers.heuristic import HeuristicAnalyzer
+from app.analyzers.log_correlator import LogCorrelator
+from app.analyzers.preflight_generator import PreflightGenerator
+from app.bundle_parser import BundleParser
 from app.models import (
     AIExplanation,
     AnalysisHistoryEntry,
@@ -31,20 +37,20 @@ from app.models import (
     LogEntry,
     LogSnippet,
     ProposedFix,
+    ResourceHealthDot,
     Severity,
+    TopologyEdge,
+    TopologyNode,
 )
-from app.bundle_parser import BundleParser
-from app.analyzers.heuristic import HeuristicAnalyzer
-from app.analyzers.ai_analyzer import AIAnalyzer
-from app.analyzers.log_correlator import LogCorrelator
-from app.analyzers.chat import BundleChat
-from app.analyzers.preflight_generator import PreflightGenerator
+from app.persistence import delete_bundle as db_delete_bundle
+from app.persistence import is_db_available, load_latest_analysis, save_analysis, save_bundle
+from app.persistence import load_all_bundles as db_load_bundles
+from app.persistence import load_analysis_history as db_load_history
 from app.rag.chunker import chunk_bundle
-from app.rag.vector_store import index_chunks, get_chunk_count, delete_bundle_chunks
-from app.persistence import save_bundle, update_bundle_status, save_analysis, load_all_bundles as db_load_bundles, load_latest_analysis, load_analysis_history as db_load_history, delete_bundle as db_delete_bundle, is_db_available
-
+from app.rag.vector_store import delete_bundle_chunks, get_chunk_count, index_chunks
 
 # --- Chat models ---
+
 
 class ChatMessage(BaseModel):
     """A single message in a chat conversation."""
@@ -66,12 +72,45 @@ class ChatResponse(BaseModel):
     answer: str
     sources: list[str] = []
 
+
 router = APIRouter(prefix="/api/bundles", tags=["Bundles"])
 
 # In-memory stores
 _bundles: dict[str, BundleInfo] = {}
 _analyses: dict[str, AnalysisResult] = {}
-_parsed_data: dict[str, dict] = {}
+
+MAX_PARSED_CACHE = 10  # Keep at most 10 bundles' parsed data in memory
+
+
+class _LRUCache(OrderedDict):
+    """Simple LRU cache using OrderedDict."""
+
+    def __init__(self, maxsize: int = MAX_PARSED_CACHE):
+        super().__init__()
+        self.maxsize = maxsize
+
+    def __getitem__(self, key):
+        value = super().__getitem__(key)
+        self.move_to_end(key)
+        return value
+
+    def __setitem__(self, key, value):
+        if key in self:
+            self.move_to_end(key)
+        super().__setitem__(key, value)
+        while len(self) > self.maxsize:
+            oldest = next(iter(self))
+            logger.info("Evicting parsed data for bundle %s (LRU)", oldest)
+            del self[oldest]
+
+    def __contains__(self, key):
+        if super().__contains__(key):
+            self.move_to_end(key)
+            return True
+        return False
+
+
+_parsed_data: _LRUCache = _LRUCache()
 
 # Content-hash based analysis cache
 _bundle_hashes: dict[str, str] = {}  # bundle_id -> file hash
@@ -201,6 +240,383 @@ def _ensure_parsed_data(bundle_id: str) -> dict:
         return {}
 
 
+@router.post("/demo", response_model=AnalysisResult, tags=["Demo"])
+async def create_demo_bundle():
+    """Create a demo bundle with sample analysis data for first-time users."""
+    demo_id = "demo-" + str(uuid.uuid4())[:8]
+
+    demo_issues = [
+        Issue(
+            severity=Severity.critical,
+            title="CrashLoopBackOff: payment-gateway/payment-api",
+            category="pod-health",
+            resource="pod/payment-gateway-7f8d9c4b5-x2k9l",
+            namespace="payments",
+            description="Container 'payment-api' in pod 'payment-gateway-7f8d9c4b5-x2k9l' is in CrashLoopBackOff with 42 restarts. The container is repeatedly crashing.",
+            evidence=[
+                "Container state: CrashLoopBackOff",
+                "Restart count: 42",
+                "Message: back-off 5m0s restarting failed container",
+            ],
+            remediation="Check container logs: kubectl logs payment-gateway-7f8d9c4b5-x2k9l -c payment-api -n payments --previous. Common causes: missing config/secrets, insufficient resources.",
+            ai_confidence=0.95,
+            ai_explanation=AIExplanation(
+                root_cause="Redis connection timeout causing crash loop. The payment-api container depends on redis-master which is not resolving.",
+                impact="Payment processing is completely down. All transactions will fail.",
+                related_issues=["Service has no endpoints: redis-master"],
+            ),
+        ),
+        Issue(
+            severity=Severity.critical,
+            title="Node not ready: worker-3",
+            category="pod-health",
+            resource="node/worker-3",
+            description="Node 'worker-3' is not in Ready state. Reason: KubeletNotReady. container runtime network not ready.",
+            evidence=["Condition: Ready=False", "Reason: KubeletNotReady"],
+            remediation="Check node 'worker-3' for kubelet issues: kubectl describe node worker-3",
+            ai_confidence=0.95,
+        ),
+        Issue(
+            severity=Severity.warning,
+            title="StatefulSet degraded: postgres-cluster (1/3 ready)",
+            category="pod-health",
+            resource="statefulset/postgres-cluster",
+            namespace="database",
+            description="StatefulSet 'postgres-cluster' in namespace 'database' has 1/3 ready replicas.",
+            evidence=["Desired: 3", "Ready: 1", "Current: 2"],
+            remediation="Check StatefulSet pods: kubectl get pods -l app=postgres-cluster -n database. StatefulSet rollouts are sequential — a stuck pod blocks the rest.",
+            ai_confidence=0.90,
+        ),
+        Issue(
+            severity=Severity.warning,
+            title="HPA scaling issue: api-hpa",
+            category="resource-usage",
+            resource="hpa/api-hpa",
+            namespace="production",
+            description="HPA 'api-hpa' in namespace 'production' has scaling concerns: Running at max replicas (10/10); ScalingLimited.",
+            evidence=[
+                "Running at max replicas (10/10)",
+                "ScalingLimited: the desired replica count is more than the maximum replica count",
+            ],
+            remediation="Review HPA status: kubectl describe hpa api-hpa -n production. Consider increasing maxReplicas or adding node capacity.",
+            ai_confidence=0.85,
+        ),
+        Issue(
+            severity=Severity.warning,
+            title="Service has no endpoints: redis-master",
+            category="networking",
+            resource="service/redis-master",
+            namespace="payments",
+            description="Service 'redis-master' in namespace 'payments' selector (app=redis, role=master) matches 0 pods. Traffic to this service will fail.",
+            evidence=["Selector: app=redis, role=master", "Matching pods: 0"],
+            remediation="Check that pods with labels matching app=redis,role=master exist in namespace 'payments'.",
+            ai_confidence=0.90,
+        ),
+        Issue(
+            severity=Severity.warning,
+            title="Probe failure: api-server-abc123",
+            category="pod-health",
+            resource="pod/api-server-abc123",
+            namespace="production",
+            description="Pod 'api-server-abc123' has failing health probes. Total occurrences: 47.",
+            evidence=["Unhealthy: Liveness probe failed: HTTP probe failed with statuscode: 503"],
+            remediation="Review the probe configuration. Check if the application starts slowly and needs a higher initialDelaySeconds.",
+            ai_confidence=0.90,
+        ),
+        Issue(
+            severity=Severity.warning,
+            title="Missing resource limits (8 container(s))",
+            category="configuration",
+            description="8 container(s) have no resource requests or limits set. This can lead to resource contention and OOM kills.",
+            evidence=[
+                "production/api-server/api",
+                "payments/payment-gateway/payment-api",
+                "monitoring/prometheus/prometheus",
+            ],
+            remediation="Add resource requests and limits to all containers.",
+            ai_confidence=0.85,
+        ),
+        Issue(
+            severity=Severity.info,
+            title="Deprecated API versions in use",
+            category="configuration",
+            description="Some resources use deprecated Kubernetes API versions that may stop working after cluster upgrades.",
+            evidence=["deployments/legacy-app uses deprecated extensions/v1beta1"],
+            remediation="Update manifests to use current API versions.",
+            ai_confidence=0.90,
+        ),
+    ]
+
+    demo_topology_nodes = [
+        TopologyNode(id="node/worker-1", label="worker-1", type="node", status="healthy"),
+        TopologyNode(id="node/worker-2", label="worker-2", type="node", status="healthy"),
+        TopologyNode(id="node/worker-3", label="worker-3", type="node", status="critical"),
+        TopologyNode(
+            id="deployment/production/api-server",
+            label="api-server",
+            type="deployment",
+            status="warning",
+            namespace="production",
+            metadata={"replicas": 3, "readyReplicas": 2},
+        ),
+        TopologyNode(
+            id="deployment/payments/payment-gateway",
+            label="payment-gateway",
+            type="deployment",
+            status="critical",
+            namespace="payments",
+            metadata={"replicas": 2, "readyReplicas": 0},
+        ),
+        TopologyNode(
+            id="statefulset/database/postgres-cluster",
+            label="postgres-cluster",
+            type="statefulset",
+            status="warning",
+            namespace="database",
+            metadata={"replicas": 3, "readyReplicas": 1},
+        ),
+        TopologyNode(
+            id="daemonset/monitoring/node-exporter",
+            label="node-exporter",
+            type="daemonset",
+            status="healthy",
+            namespace="monitoring",
+            metadata={"desired": 3, "ready": 3},
+        ),
+        TopologyNode(
+            id="service/production/api-svc", label="api-svc", type="service", status="healthy", namespace="production"
+        ),
+        TopologyNode(
+            id="service/payments/redis-master",
+            label="redis-master",
+            type="service",
+            status="warning",
+            namespace="payments",
+        ),
+        TopologyNode(
+            id="ingress/production/main-ingress",
+            label="main-ingress",
+            type="ingress",
+            status="healthy",
+            namespace="production",
+        ),
+        TopologyNode(
+            id="pod/production/api-server-abc123",
+            label="api-server-abc123",
+            type="pod",
+            status="warning",
+            namespace="production",
+            metadata={"phase": "Running", "nodeName": "worker-1"},
+        ),
+        TopologyNode(
+            id="pod/production/api-server-def456",
+            label="api-server-def456",
+            type="pod",
+            status="healthy",
+            namespace="production",
+            metadata={"phase": "Running", "nodeName": "worker-2"},
+        ),
+        TopologyNode(
+            id="pod/payments/payment-gateway-xyz",
+            label="payment-gateway-xyz",
+            type="pod",
+            status="critical",
+            namespace="payments",
+            metadata={"phase": "Running", "nodeName": "worker-1"},
+        ),
+        TopologyNode(
+            id="pod/database/postgres-0",
+            label="postgres-0",
+            type="pod",
+            status="healthy",
+            namespace="database",
+            metadata={"phase": "Running", "nodeName": "worker-1"},
+        ),
+        TopologyNode(
+            id="pod/database/postgres-1",
+            label="postgres-1",
+            type="pod",
+            status="warning",
+            namespace="database",
+            metadata={"phase": "Pending", "nodeName": ""},
+        ),
+        TopologyNode(
+            id="job/batch/data-migration",
+            label="data-migration",
+            type="job",
+            status="critical",
+            namespace="batch",
+            metadata={"succeeded": 0, "failed": 3},
+        ),
+    ]
+
+    demo_topology_edges = [
+        TopologyEdge(source="node/worker-1", target="pod/production/api-server-abc123", label="runs"),
+        TopologyEdge(source="node/worker-2", target="pod/production/api-server-def456", label="runs"),
+        TopologyEdge(source="node/worker-1", target="pod/payments/payment-gateway-xyz", label="runs"),
+        TopologyEdge(source="node/worker-1", target="pod/database/postgres-0", label="runs"),
+        TopologyEdge(
+            source="deployment/production/api-server", target="pod/production/api-server-abc123", label="owns"
+        ),
+        TopologyEdge(
+            source="deployment/production/api-server", target="pod/production/api-server-def456", label="owns"
+        ),
+        TopologyEdge(
+            source="deployment/payments/payment-gateway", target="pod/payments/payment-gateway-xyz", label="owns"
+        ),
+        TopologyEdge(source="statefulset/database/postgres-cluster", target="pod/database/postgres-0", label="owns"),
+        TopologyEdge(source="statefulset/database/postgres-cluster", target="pod/database/postgres-1", label="owns"),
+        TopologyEdge(source="service/production/api-svc", target="pod/production/api-server-abc123", label="selects"),
+        TopologyEdge(source="service/production/api-svc", target="pod/production/api-server-def456", label="selects"),
+        TopologyEdge(source="ingress/production/main-ingress", target="service/production/api-svc", label="routes"),
+    ]
+
+    demo_resource_health = [
+        ResourceHealthDot(id="node/worker-1", name="worker-1", type="node", status="healthy"),
+        ResourceHealthDot(id="node/worker-2", name="worker-2", type="node", status="healthy"),
+        ResourceHealthDot(id="node/worker-3", name="worker-3", type="node", status="critical"),
+        ResourceHealthDot(
+            id="deployment/production/api-server",
+            name="api-server",
+            type="deployment",
+            namespace="production",
+            status="warning",
+        ),
+        ResourceHealthDot(
+            id="deployment/payments/payment-gateway",
+            name="payment-gateway",
+            type="deployment",
+            namespace="payments",
+            status="critical",
+        ),
+        ResourceHealthDot(
+            id="statefulset/database/postgres-cluster",
+            name="postgres-cluster",
+            type="statefulset",
+            namespace="database",
+            status="warning",
+        ),
+        ResourceHealthDot(
+            id="pod/production/api-server-abc123",
+            name="api-server-abc123",
+            type="pod",
+            namespace="production",
+            status="warning",
+        ),
+        ResourceHealthDot(
+            id="pod/production/api-server-def456",
+            name="api-server-def456",
+            type="pod",
+            namespace="production",
+            status="healthy",
+        ),
+        ResourceHealthDot(
+            id="pod/payments/payment-gateway-xyz",
+            name="payment-gateway-xyz",
+            type="pod",
+            namespace="payments",
+            status="critical",
+        ),
+        ResourceHealthDot(
+            id="pod/database/postgres-0", name="postgres-0", type="pod", namespace="database", status="healthy"
+        ),
+        ResourceHealthDot(
+            id="pod/database/postgres-1", name="postgres-1", type="pod", namespace="database", status="warning"
+        ),
+        ResourceHealthDot(
+            id="pod/monitoring/prometheus-0", name="prometheus-0", type="pod", namespace="monitoring", status="healthy"
+        ),
+        ResourceHealthDot(
+            id="pod/monitoring/grafana-abc", name="grafana-abc", type="pod", namespace="monitoring", status="healthy"
+        ),
+        ResourceHealthDot(
+            id="service/production/api-svc", name="api-svc", type="service", namespace="production", status="healthy"
+        ),
+        ResourceHealthDot(
+            id="service/payments/redis-master",
+            name="redis-master",
+            type="service",
+            namespace="payments",
+            status="warning",
+        ),
+        ResourceHealthDot(
+            id="job/batch/data-migration", name="data-migration", type="job", namespace="batch", status="critical"
+        ),
+    ]
+
+    result = AnalysisResult(
+        bundle_id=demo_id,
+        status=BundleStatus.completed,
+        cluster_health=ClusterHealth(
+            score=52, node_count=3, pod_count=16, namespace_count=5, critical_count=3, warning_count=5, info_count=1
+        ),
+        issues=demo_issues,
+        log_entries=[
+            LogEntry(
+                timestamp="2024-01-15T10:28:00Z",
+                source="payments/payment-gateway/payment-api",
+                level="error",
+                message="Failed to connect to redis-master:6379 - Connection refused",
+                namespace="payments",
+                pod="payment-gateway-xyz",
+            ),
+            LogEntry(
+                timestamp="2024-01-15T10:28:05Z",
+                source="payments/payment-gateway/payment-api",
+                level="error",
+                message="FATAL: Redis connection timeout after 30s, shutting down",
+                namespace="payments",
+                pod="payment-gateway-xyz",
+            ),
+            LogEntry(
+                timestamp="2024-01-15T10:29:00Z",
+                source="production/api-server/api",
+                level="warn",
+                message="High latency detected on /api/checkout: p99=4200ms",
+                namespace="production",
+                pod="api-server-abc123",
+            ),
+            LogEntry(
+                timestamp="2024-01-15T10:29:15Z",
+                source="database/postgres-0/postgres",
+                level="warn",
+                message="replication lag exceeding 30s for standby postgres-1",
+                namespace="database",
+                pod="postgres-0",
+            ),
+            LogEntry(
+                timestamp="2024-01-15T10:30:00Z",
+                source="production/api-server/api",
+                level="error",
+                message="upstream connect error: connection refused to payments.svc.cluster.local:8080",
+                namespace="production",
+                pod="api-server-abc123",
+            ),
+        ],
+        topology_nodes=demo_topology_nodes,
+        topology_edges=demo_topology_edges,
+        summary="Cluster is experiencing cascading failures originating from a missing Redis service in the payments namespace. The payment-gateway deployment is in CrashLoopBackOff due to Redis connection timeouts, causing upstream API errors. Node worker-3 is NotReady, further reducing cluster capacity. The postgres StatefulSet has a stuck rollout with only 1 of 3 replicas ready.",
+        analyzed_at=datetime.now(UTC),
+        raw_events=[],
+        correlations=[],
+        resource_health=demo_resource_health,
+        ai_insights=[
+            "Root cause chain: redis-master service has no endpoints -> payment-gateway crashes -> cascading API failures.",
+            "Node worker-3 being NotReady reduces scheduling capacity by 33%, compounding the StatefulSet rollout issue.",
+            "8 containers lack resource limits -- in a resource-constrained cluster, this increases OOM kill risk.",
+            "The HPA for api-server is at max replicas (10/10), indicating the application cannot scale further under current load.",
+            "Consider prioritizing: 1) Fix redis-master selector, 2) Investigate worker-3, 3) Add resource limits.",
+        ],
+    )
+
+    # Store in memory so the analysis page works
+    demo_bundle = BundleInfo(id=demo_id, filename="demo-support-bundle.tar.gz", status=BundleStatus.completed)
+    _bundles[demo_id] = demo_bundle
+    _analyses[demo_id] = result
+
+    return result
+
+
 @router.post("/upload", response_model=BundleInfo)
 async def upload_bundle(file: UploadFile = File(...)):
     """Upload a support bundle tar.gz file."""
@@ -257,7 +673,7 @@ async def upload_bundle(file: UploadFile = File(...)):
     bundle_info = BundleInfo(
         id=bundle_id,
         filename=file.filename,
-        upload_time=datetime.now(timezone.utc),
+        upload_time=datetime.now(UTC),
         status=BundleStatus.uploaded,
         file_path=str(extract_dir),
     )
@@ -300,14 +716,16 @@ async def cross_bundle_search(q: str, n: int = 10):
         if results and results["documents"]:
             for i, doc in enumerate(results["documents"][0]):
                 meta = results["metadatas"][0][i] if results["metadatas"] else {}
-                hits.append({
-                    "content": doc[:500],
-                    "bundle_id": meta.get("bundle_id", ""),
-                    "chunk_type": meta.get("chunk_type", ""),
-                    "namespace": meta.get("namespace", ""),
-                    "severity": meta.get("severity", ""),
-                    "distance": results["distances"][0][i] if results["distances"] else 0,
-                })
+                hits.append(
+                    {
+                        "content": doc[:500],
+                        "bundle_id": meta.get("bundle_id", ""),
+                        "chunk_type": meta.get("chunk_type", ""),
+                        "namespace": meta.get("namespace", ""),
+                        "severity": meta.get("severity", ""),
+                        "distance": results["distances"][0][i] if results["distances"] else 0,
+                    }
+                )
 
         return {
             "query": q,
@@ -324,7 +742,6 @@ async def get_bundle_chunks(bundle_id: str):
     if bundle_id not in _bundles:
         raise HTTPException(status_code=404, detail="Bundle not found")
 
-    from app.rag.vector_store import get_chunk_count
     from app.persistence import get_chunk_stats
 
     vector_count = get_chunk_count(bundle_id)
@@ -360,6 +777,7 @@ async def analyze_bundle_stream(bundle_id: str):
 
     async def event_stream():
         try:
+
             def send(step: str, detail: str, progress: int):
                 data = json.dumps({"step": step, "detail": detail, "progress": progress})
                 return f"data: {data}\n\n"
@@ -376,7 +794,7 @@ async def analyze_bundle_stream(bundle_id: str):
             yield send("parsing", f"Found {pods} pods, {nodes} nodes, {events} events", 15)
 
             # Step 2: Heuristic analysis
-            yield send("heuristics", f"Running 25 pattern detectors...", 25)
+            yield send("heuristics", "Running 25 pattern detectors...", 25)
             heuristic = HeuristicAnalyzer(parsed_data)
             heuristic_issues = await asyncio.to_thread(heuristic.analyze)
             yield send("heuristics", f"Found {len(heuristic_issues)} issues", 40)
@@ -395,15 +813,17 @@ async def analyze_bundle_stream(bundle_id: str):
                     severity_val = ai_issue_data.get("severity", "info").lower()
                     if severity_val not in ("critical", "warning", "info"):
                         severity_val = "info"
-                    all_issues.append(Issue(
-                        severity=Severity(severity_val),
-                        title=ai_issue_data.get("title", "AI-detected issue"),
-                        category=ai_issue_data.get("category", "configuration"),
-                        description=ai_issue_data.get("description", ""),
-                        evidence=ai_issue_data.get("evidence", []),
-                        remediation=ai_issue_data.get("remediation", ""),
-                        ai_confidence=0.75,
-                    ))
+                    all_issues.append(
+                        Issue(
+                            severity=Severity(severity_val),
+                            title=ai_issue_data.get("title", "AI-detected issue"),
+                            category=ai_issue_data.get("category", "configuration"),
+                            description=ai_issue_data.get("description", ""),
+                            evidence=ai_issue_data.get("evidence", []),
+                            remediation=ai_issue_data.get("remediation", ""),
+                            ai_confidence=0.75,
+                        )
+                    )
                 except Exception:
                     pass
 
@@ -420,31 +840,52 @@ async def analyze_bundle_stream(bundle_id: str):
                             cmd_start = step.find("kubectl")
                             command = step[cmd_start:].strip().rstrip(".")
                             is_automated = True
-                        issue.proposed_fixes.append(ProposedFix(description=step, command=command, is_automated=is_automated))
+                        issue.proposed_fixes.append(
+                            ProposedFix(description=step, command=command, is_automated=is_automated)
+                        )
 
                 if not issue.relevant_log_snippets:
-                    matching_logs = [l for l in all_logs if l.get("level") in ("error", "warn") and (
-                        (issue.namespace and l.get("namespace") == issue.namespace) or
-                        (issue.resource and l.get("pod") and issue.resource in l.get("pod", ""))
-                    )][:50]
+                    matching_logs = [
+                        l
+                        for l in all_logs
+                        if l.get("level") in ("error", "warn")
+                        and (
+                            (issue.namespace and l.get("namespace") == issue.namespace)
+                            or (issue.resource and l.get("pod") and issue.resource in l.get("pod", ""))
+                        )
+                    ][:50]
                     source_logs: dict[str, list[str]] = {}
                     for ml in matching_logs:
                         src = ml.get("source", "unknown")
                         source_logs.setdefault(src, []).append(ml.get("message", "")[:300])
                     for src, lines in source_logs.items():
                         highlight = [i for i, line in enumerate(lines) if "error" in line.lower()]
-                        issue.relevant_log_snippets.append(LogSnippet(source=src, lines=lines[:20], highlight_indices=highlight[:10], level="error"))
+                        issue.relevant_log_snippets.append(
+                            LogSnippet(source=src, lines=lines[:20], highlight_indices=highlight[:10], level="error")
+                        )
 
                 if not issue.ai_explanation:
-                    severity_impact = {"critical": "This issue can cause service outages or data loss", "warning": "This issue may degrade performance or reliability", "info": "This is an informational finding worth reviewing"}
-                    issue.ai_explanation = AIExplanation(root_cause=issue.description, impact=severity_impact.get(issue.severity.value, "Unknown impact"), related_issues=[])
+                    severity_impact = {
+                        "critical": "This issue can cause service outages or data loss",
+                        "warning": "This issue may degrade performance or reliability",
+                        "info": "This is an informational finding worth reviewing",
+                    }
+                    issue.ai_explanation = AIExplanation(
+                        root_cause=issue.description,
+                        impact=severity_impact.get(issue.severity.value, "Unknown impact"),
+                        related_issues=[],
+                    )
 
             # Step 6: Build topology
             yield send("topology", "Building cluster topology graph...", 80)
             correlator = LogCorrelator()
-            timeline_events = correlator.correlate(parsed_data.get("events", []), parsed_data.get("logs", []), all_issues)
+            timeline_events = correlator.correlate(
+                parsed_data.get("events", []), parsed_data.get("logs", []), all_issues
+            )
             topology_nodes, topology_edges = correlator.build_topology(parsed_data)
-            correlation_groups = correlator.build_correlation_groups(timeline_events, parsed_data.get("logs", []), all_issues)
+            correlation_groups = correlator.build_correlation_groups(
+                timeline_events, parsed_data.get("logs", []), all_issues
+            )
             resource_health = correlator.build_resource_health(parsed_data)
 
             # Step 7: Finalize
@@ -462,7 +903,7 @@ async def analyze_bundle_stream(bundle_id: str):
                 topology_nodes=topology_nodes,
                 topology_edges=topology_edges,
                 summary=ai_result.get("summary", "Analysis complete."),
-                analyzed_at=datetime.now(timezone.utc),
+                analyzed_at=datetime.now(UTC),
                 raw_events=raw_events,
                 correlations=correlation_groups,
                 resource_health=resource_health,
@@ -477,8 +918,9 @@ async def analyze_bundle_stream(bundle_id: str):
             yield send("indexing", "Indexing for search...", 95)
             try:
                 chunks = chunk_bundle(bundle_id, parsed_data)
-                indexed = index_chunks(chunks)
+                index_chunks(chunks)
                 from app.persistence import save_chunks
+
                 save_chunks(chunks)
             except Exception:
                 pass
@@ -497,7 +939,9 @@ async def analyze_bundle_stream(bundle_id: str):
             bundle.status = BundleStatus.failed
             yield f"data: {json.dumps({'step': 'error', 'detail': str(e), 'progress': 0})}\n\n"
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    return StreamingResponse(
+        event_stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    )
 
 
 @router.post("/{bundle_id}/analyze", response_model=AnalysisResult, tags=["Analysis"])
@@ -515,7 +959,7 @@ async def analyze_bundle(bundle_id: str):
         if cached_id in _analyses and cached_id != bundle_id:
             cached = _analyses[cached_id]
             # Clone result for this bundle_id
-            result = cached.model_copy(update={"bundle_id": bundle_id, "analyzed_at": datetime.now(timezone.utc)})
+            result = cached.model_copy(update={"bundle_id": bundle_id, "analyzed_at": datetime.now(UTC)})
             _analyses[bundle_id] = result
             bundle.status = BundleStatus.completed
             return result
@@ -546,15 +990,17 @@ async def analyze_bundle(bundle_id: str):
                 severity_val = ai_issue_data.get("severity", "info").lower()
                 if severity_val not in ("critical", "warning", "info"):
                     severity_val = "info"
-                all_issues.append(Issue(
-                    severity=Severity(severity_val),
-                    title=ai_issue_data.get("title", "AI-detected issue"),
-                    category=ai_issue_data.get("category", "configuration"),
-                    description=ai_issue_data.get("description", ""),
-                    evidence=ai_issue_data.get("evidence", []),
-                    remediation=ai_issue_data.get("remediation", ""),
-                    ai_confidence=0.75,
-                ))
+                all_issues.append(
+                    Issue(
+                        severity=Severity(severity_val),
+                        title=ai_issue_data.get("title", "AI-detected issue"),
+                        category=ai_issue_data.get("category", "configuration"),
+                        description=ai_issue_data.get("description", ""),
+                        evidence=ai_issue_data.get("evidence", []),
+                        remediation=ai_issue_data.get("remediation", ""),
+                        ai_confidence=0.75,
+                    )
+                )
             except Exception as e:
                 logger.warning("Could not parse AI issue: %s", e)
 
@@ -563,11 +1009,7 @@ async def analyze_bundle(bundle_id: str):
         for issue in all_issues:
             # Generate proposed_fixes from remediation text if not already set
             if not issue.proposed_fixes and issue.remediation:
-                fix_steps = [
-                    s.strip()
-                    for s in issue.remediation.replace(". ", ".\n").split("\n")
-                    if s.strip()
-                ]
+                fix_steps = [s.strip() for s in issue.remediation.replace(". ", ".\n").split("\n") if s.strip()]
                 for step in fix_steps:
                     command = None
                     is_automated = False
@@ -575,11 +1017,13 @@ async def analyze_bundle(bundle_id: str):
                         cmd_start = step.find("kubectl")
                         command = step[cmd_start:].strip().rstrip(".")
                         is_automated = True
-                    issue.proposed_fixes.append(ProposedFix(
-                        description=step,
-                        command=command,
-                        is_automated=is_automated,
-                    ))
+                    issue.proposed_fixes.append(
+                        ProposedFix(
+                            description=step,
+                            command=command,
+                            is_automated=is_automated,
+                        )
+                    )
 
             # Attach relevant_log_snippets by matching log entries to the issue's namespace/pod/resource
             if not issue.relevant_log_snippets:
@@ -603,12 +1047,14 @@ async def analyze_bundle(bundle_id: str):
 
                 for src, lines in source_logs.items():
                     highlight = [i for i, line in enumerate(lines) if "error" in line.lower()]
-                    issue.relevant_log_snippets.append(LogSnippet(
-                        source=src,
-                        lines=lines[:20],
-                        highlight_indices=highlight[:10],
-                        level="error",
-                    ))
+                    issue.relevant_log_snippets.append(
+                        LogSnippet(
+                            source=src,
+                            lines=lines[:20],
+                            highlight_indices=highlight[:10],
+                            level="error",
+                        )
+                    )
 
             # Generate ai_explanation if not already set
             if not issue.ai_explanation:
@@ -664,7 +1110,7 @@ async def analyze_bundle(bundle_id: str):
             topology_nodes=topology_nodes,
             topology_edges=topology_edges,
             summary=ai_result.get("summary", "Analysis complete."),
-            analyzed_at=datetime.now(timezone.utc),
+            analyzed_at=datetime.now(UTC),
             raw_events=raw_events,
             correlations=correlation_groups,
             resource_health=resource_health,
@@ -681,6 +1127,7 @@ async def analyze_bundle(bundle_id: str):
             indexed = index_chunks(chunks)
             logger.info("Indexed %d chunks for bundle %s", indexed, bundle_id)
             from app.persistence import save_chunks
+
             save_chunks(chunks)
         except Exception as e:
             logger.warning("RAG indexing failed (non-fatal): %s", e)
@@ -721,7 +1168,7 @@ async def delete_bundle(bundle_id: str):
     if bundle_id not in _bundles:
         raise HTTPException(status_code=404, detail="Bundle not found")
 
-    bundle = _bundles[bundle_id]
+    _bundles[bundle_id]
 
     # Remove files from disk
     bundle_dir = DATA_DIR / bundle_id
@@ -852,12 +1299,12 @@ async def chat_with_bundle(bundle_id: str, body: ChatRequest):
 
     # Add RAG retrieval sources
     for rs in retrieval_sources:
-        src_desc = f"[RAG:{rs.get('type','')}]"
-        if rs.get('namespace'):
+        src_desc = f"[RAG:{rs.get('type', '')}]"
+        if rs.get("namespace"):
             src_desc += f" ns:{rs['namespace']}"
-        if rs.get('pod'):
+        if rs.get("pod"):
             src_desc += f" pod:{rs['pod']}"
-        if rs.get('relevance'):
+        if rs.get("relevance"):
             src_desc += f" (relevance: {rs['relevance']})"
         sources.append(src_desc)
 
@@ -881,14 +1328,16 @@ async def get_analysis_history(bundle_id: str):
                 data = json.load(fh)
             health = data.get("cluster_health", {})
             issues = data.get("issues", [])
-            entries.append(AnalysisHistoryEntry(
-                analyzed_at=data.get("analyzed_at", ""),
-                health_score=health.get("score", 0),
-                critical_count=health.get("critical_count", 0),
-                warning_count=health.get("warning_count", 0),
-                info_count=health.get("info_count", 0),
-                issue_count=len(issues),
-            ))
+            entries.append(
+                AnalysisHistoryEntry(
+                    analyzed_at=data.get("analyzed_at", ""),
+                    health_score=health.get("score", 0),
+                    critical_count=health.get("critical_count", 0),
+                    warning_count=health.get("warning_count", 0),
+                    info_count=health.get("info_count", 0),
+                    issue_count=len(issues),
+                )
+            )
         except Exception as e:
             logger.warning("Failed to read history file %s: %s", f, e)
 
@@ -896,7 +1345,9 @@ async def get_analysis_history(bundle_id: str):
     if is_db_available():
         db_history = db_load_history(bundle_id)
         # Merge — add DB entries that aren't already in file-based history
-        existing_timestamps = {e.analyzed_at.isoformat() if hasattr(e, 'analyzed_at') else str(e.get('analyzed_at', '')) for e in entries}
+        existing_timestamps = {
+            e.analyzed_at.isoformat() if hasattr(e, "analyzed_at") else str(e.get("analyzed_at", "")) for e in entries
+        }
         for entry in db_history:
             if entry["analyzed_at"] not in existing_timestamps:
                 entries.append(AnalysisHistoryEntry.model_validate(entry))
@@ -926,6 +1377,7 @@ async def get_historical_analysis(bundle_id: str, timestamp: str):
 @router.post("/compare", response_model=CompareResponse, tags=["History"])
 async def compare_analyses(body: CompareRequest):
     """Compare two bundle analyses side by side."""
+
     def _load_analysis(bundle_id: str, timestamp: str | None) -> AnalysisResult:
         if timestamp:
             analysis_path = DATA_DIR / bundle_id / "analyses" / f"{timestamp}.json"
@@ -959,17 +1411,14 @@ def _compute_cluster_health(parsed_data: dict[str, Any], issues: list[Issue]) ->
     info_count = sum(1 for i in issues if i.severity == Severity.info)
 
     total_pods = len(pods)
-    running_pods = sum(
-        1 for p in pods
-        if p.get("status", {}).get("phase") in ("Running", "Succeeded")
-    )
+    running_pods = sum(1 for p in pods if p.get("status", {}).get("phase") in ("Running", "Succeeded"))
 
     # Node health
     ready_nodes = sum(
-        1 for n in nodes
+        1
+        for n in nodes
         if any(
-            c.get("type") == "Ready" and c.get("status") == "True"
-            for c in n.get("status", {}).get("conditions", [])
+            c.get("type") == "Ready" and c.get("status") == "True" for c in n.get("status", {}).get("conditions", [])
         )
     )
     node_ratio = (ready_nodes / len(nodes)) if nodes else 1.0

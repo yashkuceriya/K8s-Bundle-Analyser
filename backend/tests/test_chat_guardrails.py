@@ -1,4 +1,5 @@
 """Tests for chat guardrails — prompt injection blocking, profanity filtering, persona lock."""
+
 from unittest.mock import MagicMock
 
 from app.analyzers.chat import BundleChat
@@ -12,9 +13,7 @@ def _make_chat() -> BundleChat:
                 "metadata": {"name": "web-abc", "namespace": "default"},
                 "status": {
                     "phase": "Running",
-                    "containerStatuses": [
-                        {"name": "web", "restartCount": 0, "image": "nginx:1.25"}
-                    ],
+                    "containerStatuses": [{"name": "web", "restartCount": 0, "image": "nginx:1.25"}],
                 },
             }
         ],

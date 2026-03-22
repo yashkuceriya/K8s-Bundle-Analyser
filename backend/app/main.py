@@ -24,9 +24,9 @@ _configure_logging()
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import bundles
-from app.routers.bundles import _load_all_bundles, _load_all_analyses
 from app.persistence import try_init_db
+from app.routers import bundles
+from app.routers.bundles import _load_all_analyses, _load_all_bundles
 
 logger = logging.getLogger(__name__)
 
@@ -85,3 +85,9 @@ app.include_router(bundles.router)
 async def health_check() -> dict[str, str]:
     """Return service health status."""
     return {"status": "ok", "service": "support-bundle-analyzer"}
+
+
+@app.get("/api/health", tags=["System"])
+async def api_health_check():
+    """API health check for monitoring."""
+    return {"status": "ok"}

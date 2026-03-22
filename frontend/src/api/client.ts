@@ -6,6 +6,24 @@ const api = axios.create({
   timeout: 30000,
 });
 
+// Retry on network errors (connection refused, timeout)
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const config = error.config;
+    if (!config || config._retryCount >= 2) return Promise.reject(error);
+
+    // Only retry on network errors or timeouts, not HTTP errors
+    if (error.code === 'ECONNABORTED' || error.message === 'Network Error' || !error.response) {
+      config._retryCount = (config._retryCount || 0) + 1;
+      await new Promise(r => setTimeout(r, 1000 * config._retryCount));
+      return api(config);
+    }
+
+    return Promise.reject(error);
+  }
+);
+
 export async function uploadBundle(file: File): Promise<BundleInfo> {
   const formData = new FormData();
   formData.append('file', file);
@@ -72,6 +90,11 @@ export async function getHistoricalAnalysis(id: string, timestamp: string): Prom
 export async function compareAnalyses(request: CompareRequest): Promise<CompareResponse> {
   const response = await api.post<CompareResponse>('/bundles/compare', request);
   return response.data;
+}
+
+export async function createDemo(): Promise<AnalysisResult> {
+  const { data } = await api.post<AnalysisResult>('/bundles/demo');
+  return data;
 }
 
 export function analyzeWithProgress(

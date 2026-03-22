@@ -1,4 +1,5 @@
 """Chunk parsed bundle data into retrieval-friendly documents."""
+
 from __future__ import annotations
 
 import hashlib
@@ -45,16 +46,18 @@ def chunk_bundle(bundle_id: str, parsed_data: dict[str, Any]) -> list[dict]:
             if c.get("status") != "True":
                 lines.append(f"  Condition {c.get('type')}: {c.get('status')} - {c.get('message', '')}")
 
-        chunks.append(_make_chunk(
-            bundle_id=bundle_id,
-            chunk_type="pod_status",
-            content="\n".join(lines),
-            namespace=ns,
-            pod=name,
-            resource_kind="Pod",
-            resource_name=name,
-            severity=_pod_severity(phase, status),
-        ))
+        chunks.append(
+            _make_chunk(
+                bundle_id=bundle_id,
+                chunk_type="pod_status",
+                content="\n".join(lines),
+                namespace=ns,
+                pod=name,
+                resource_kind="Pod",
+                resource_name=name,
+                severity=_pod_severity(phase, status),
+            )
+        )
 
     # 2. Node chunks — one per node
     for node in parsed_data.get("nodes", []):
@@ -64,15 +67,19 @@ def chunk_bundle(bundle_id: str, parsed_data: dict[str, Any]) -> list[dict]:
         for c in conditions:
             lines.append(f"  {c.get('type')}: {c.get('status')} - {c.get('reason', '')} {c.get('message', '')}")
 
-        chunks.append(_make_chunk(
-            bundle_id=bundle_id,
-            chunk_type="node_status",
-            content="\n".join(lines),
-            node=name,
-            resource_kind="Node",
-            resource_name=name,
-            severity="critical" if any(c.get("type") == "Ready" and c.get("status") != "True" for c in conditions) else "healthy",
-        ))
+        chunks.append(
+            _make_chunk(
+                bundle_id=bundle_id,
+                chunk_type="node_status",
+                content="\n".join(lines),
+                node=name,
+                resource_kind="Node",
+                resource_name=name,
+                severity="critical"
+                if any(c.get("type") == "Ready" and c.get("status") != "True" for c in conditions)
+                else "healthy",
+            )
+        )
 
     # 3. Event chunks — group warning events by resource
     events = parsed_data.get("events", [])
@@ -93,15 +100,17 @@ def chunk_bundle(bundle_id: str, parsed_data: dict[str, Any]) -> list[dict]:
             lines.append(f"  [{reason}] (x{count}) {msg}")
 
         involved = group[0].get("involvedObject", {})
-        chunks.append(_make_chunk(
-            bundle_id=bundle_id,
-            chunk_type="warning_events",
-            content="\n".join(lines),
-            namespace=involved.get("namespace"),
-            resource_kind=involved.get("kind"),
-            resource_name=involved.get("name"),
-            severity="warning",
-        ))
+        chunks.append(
+            _make_chunk(
+                bundle_id=bundle_id,
+                chunk_type="warning_events",
+                content="\n".join(lines),
+                namespace=involved.get("namespace"),
+                resource_kind=involved.get("kind"),
+                resource_name=involved.get("name"),
+                severity="warning",
+            )
+        )
 
     # 4. Log chunks — window-based chunking per source
     logs = parsed_data.get("logs", [])
@@ -114,7 +123,7 @@ def chunk_bundle(bundle_id: str, parsed_data: dict[str, Any]) -> list[dict]:
     for source, source_logs in log_groups.items():
         # Split into chunks with overlap
         for i in range(0, len(source_logs), MAX_CHUNK_LINES - OVERLAP_LINES):
-            window = source_logs[i:i + MAX_CHUNK_LINES]
+            window = source_logs[i : i + MAX_CHUNK_LINES]
             if not window:
                 break
 
@@ -133,15 +142,17 @@ def chunk_bundle(bundle_id: str, parsed_data: dict[str, Any]) -> list[dict]:
             ns = parts[0] if len(parts) > 0 else None
             pod = parts[1] if len(parts) > 1 else None
 
-            chunks.append(_make_chunk(
-                bundle_id=bundle_id,
-                chunk_type="pod_log",
-                content="\n".join(lines),
-                namespace=ns,
-                pod=pod,
-                source_path=source,
-                severity="error" if has_errors else "info",
-            ))
+            chunks.append(
+                _make_chunk(
+                    bundle_id=bundle_id,
+                    chunk_type="pod_log",
+                    content="\n".join(lines),
+                    namespace=ns,
+                    pod=pod,
+                    source_path=source,
+                    severity="error" if has_errors else "info",
+                )
+            )
 
     # 5. Cluster summary chunk
     nodes = parsed_data.get("nodes", [])
@@ -163,11 +174,13 @@ def chunk_bundle(bundle_id: str, parsed_data: dict[str, Any]) -> list[dict]:
         f"  Namespaces: {len(namespaces)}",
         f"  Warning events: {len(warning_events)}",
     ]
-    chunks.append(_make_chunk(
-        bundle_id=bundle_id,
-        chunk_type="cluster_summary",
-        content="\n".join(summary_lines),
-    ))
+    chunks.append(
+        _make_chunk(
+            bundle_id=bundle_id,
+            chunk_type="cluster_summary",
+            content="\n".join(summary_lines),
+        )
+    )
 
     # 6. StatefulSet chunks
     for sts in parsed_data.get("statefulsets", []):
@@ -187,15 +200,17 @@ def chunk_bundle(bundle_id: str, parsed_data: dict[str, Any]) -> list[dict]:
         svc_name = spec.get("serviceName", "")
         if svc_name:
             lines.append(f"Service: {svc_name}")
-        chunks.append(_make_chunk(
-            bundle_id=bundle_id,
-            chunk_type="statefulset_status",
-            content="\n".join(lines),
-            namespace=ns,
-            resource_kind="StatefulSet",
-            resource_name=name,
-            severity="warning" if ready < (replicas or 0) else "healthy",
-        ))
+        chunks.append(
+            _make_chunk(
+                bundle_id=bundle_id,
+                chunk_type="statefulset_status",
+                content="\n".join(lines),
+                namespace=ns,
+                resource_kind="StatefulSet",
+                resource_name=name,
+                severity="warning" if ready < (replicas or 0) else "healthy",
+            )
+        )
 
     # 7. DaemonSet chunks
     for ds in parsed_data.get("daemonsets", []):
@@ -211,15 +226,17 @@ def chunk_bundle(bundle_id: str, parsed_data: dict[str, Any]) -> list[dict]:
         ]
         if ready < desired:
             lines.append(f"WARNING: {desired - ready} nodes missing DaemonSet pod")
-        chunks.append(_make_chunk(
-            bundle_id=bundle_id,
-            chunk_type="daemonset_status",
-            content="\n".join(lines),
-            namespace=ns,
-            resource_kind="DaemonSet",
-            resource_name=name,
-            severity="warning" if ready < desired else "healthy",
-        ))
+        chunks.append(
+            _make_chunk(
+                bundle_id=bundle_id,
+                chunk_type="daemonset_status",
+                content="\n".join(lines),
+                namespace=ns,
+                resource_kind="DaemonSet",
+                resource_name=name,
+                severity="warning" if ready < desired else "healthy",
+            )
+        )
 
     # 8. Job chunks
     for job in parsed_data.get("jobs", []):
@@ -237,15 +254,17 @@ def chunk_bundle(bundle_id: str, parsed_data: dict[str, Any]) -> list[dict]:
         for c in conditions:
             lines.append(f"Condition: {c.get('type')}={c.get('status')} - {c.get('message', '')}")
         sev = "critical" if failed > 0 else "healthy"
-        chunks.append(_make_chunk(
-            bundle_id=bundle_id,
-            chunk_type="job_status",
-            content="\n".join(lines),
-            namespace=ns,
-            resource_kind="Job",
-            resource_name=name,
-            severity=sev,
-        ))
+        chunks.append(
+            _make_chunk(
+                bundle_id=bundle_id,
+                chunk_type="job_status",
+                content="\n".join(lines),
+                namespace=ns,
+                resource_kind="Job",
+                resource_name=name,
+                severity=sev,
+            )
+        )
 
     # 9. Ingress chunks
     for ing in parsed_data.get("ingresses", []):
@@ -265,15 +284,17 @@ def chunk_bundle(bundle_id: str, parsed_data: dict[str, Any]) -> list[dict]:
         tls = spec.get("tls", []) or []
         if tls:
             lines.append(f"TLS: {len(tls)} certificate(s)")
-        chunks.append(_make_chunk(
-            bundle_id=bundle_id,
-            chunk_type="ingress_config",
-            content="\n".join(lines),
-            namespace=ns,
-            resource_kind="Ingress",
-            resource_name=name,
-            severity="healthy",
-        ))
+        chunks.append(
+            _make_chunk(
+                bundle_id=bundle_id,
+                chunk_type="ingress_config",
+                content="\n".join(lines),
+                namespace=ns,
+                resource_kind="Ingress",
+                resource_name=name,
+                severity="healthy",
+            )
+        )
 
     logger.info("Chunked bundle %s into %d chunks", bundle_id, len(chunks))
     return chunks

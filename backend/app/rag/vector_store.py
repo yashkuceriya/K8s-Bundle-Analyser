@@ -1,9 +1,9 @@
 """ChromaDB vector store for bundle chunk embeddings."""
+
 from __future__ import annotations
 
 import logging
 import os
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,9 @@ def _get_collection():
                 embedding_function=embedding_fn,
                 metadata={"hnsw:space": "cosine"},
             )
-            logger.info("ChromaDB using OpenAI text-embedding-3-small (persist=%s, count=%d)", persist_dir, _collection.count())
+            logger.info(
+                "ChromaDB using OpenAI text-embedding-3-small (persist=%s, count=%d)", persist_dir, _collection.count()
+            )
         else:
             _collection = _client.get_or_create_collection(
                 name="bundle_chunks",
@@ -73,9 +75,9 @@ def index_chunks(chunks: list[dict]) -> int:
         batch_size = 100
         total = 0
         for i in range(0, len(ids), batch_size):
-            batch_ids = ids[i:i+batch_size]
-            batch_docs = documents[i:i+batch_size]
-            batch_meta = clean_metadatas[i:i+batch_size]
+            batch_ids = ids[i : i + batch_size]
+            batch_docs = documents[i : i + batch_size]
+            batch_meta = clean_metadatas[i : i + batch_size]
             collection.upsert(ids=batch_ids, documents=batch_docs, metadatas=batch_meta)
             total += len(batch_ids)
 
@@ -120,12 +122,14 @@ def retrieve(query: str, bundle_id: str, n_results: int = 10, filters: dict | No
 
         chunks = []
         for i, doc in enumerate(results["documents"][0]):
-            chunks.append({
-                "id": results["ids"][0][i] if results["ids"] else "",
-                "content": doc,
-                "metadata": results["metadatas"][0][i] if results["metadatas"] else {},
-                "distance": results["distances"][0][i] if results["distances"] else 0,
-            })
+            chunks.append(
+                {
+                    "id": results["ids"][0][i] if results["ids"] else "",
+                    "content": doc,
+                    "metadata": results["metadatas"][0][i] if results["metadatas"] else {},
+                    "distance": results["distances"][0][i] if results["distances"] else 0,
+                }
+            )
 
         return chunks
     except Exception as e:
@@ -142,7 +146,7 @@ def get_chunk_count(bundle_id: str | None = None) -> int:
         try:
             results = collection.get(where={"bundle_id": bundle_id})
             return len(results["ids"]) if results else 0
-        except:
+        except Exception:
             return 0
     return collection.count()
 

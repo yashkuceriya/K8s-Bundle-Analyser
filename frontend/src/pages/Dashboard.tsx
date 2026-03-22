@@ -10,13 +10,14 @@ import {
   Zap,
   ArrowRight,
   Plus,
+  Loader2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import clsx from 'clsx';
 import Navbar from '../components/Navbar';
 import LoadingSpinner from '../components/LoadingSpinner';
 import HealthScore from '../components/HealthScore';
-import { uploadBundle, getBundles, analyzeBundle, analyzeWithProgress, deleteBundle } from '../api/client';
+import { uploadBundle, getBundles, analyzeBundle, analyzeWithProgress, deleteBundle, createDemo } from '../api/client';
 import type { BundleInfo } from '../types';
 
 const statusConfig: Record<string, { icon: React.ReactNode; color: string; bg: string; dot: string }> = {
@@ -57,6 +58,7 @@ export default function Dashboard() {
   const [uploadedBundle, setUploadedBundle] = useState<BundleInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [analysisProgress, setAnalysisProgress] = useState<{ step: string; detail: string; progress: number } | null>(null);
+  const [loadingDemo, setLoadingDemo] = useState(false);
 
   const hasLoadedOnce = useRef(false);
   const fetchBundles = useCallback(async () => {
@@ -135,6 +137,18 @@ export default function Dashboard() {
     }
   };
 
+  const handleDemo = async () => {
+    setLoadingDemo(true);
+    try {
+      const result = await createDemo();
+      navigate(`/analysis/${result.bundle_id}`);
+    } catch {
+      setError('Failed to load demo. Please try again.');
+    } finally {
+      setLoadingDemo(false);
+    }
+  };
+
   const handleDelete = async (bundleId: string) => {
     try {
       await deleteBundle(bundleId);
@@ -194,6 +208,14 @@ export default function Dashboard() {
                 <p className="text-[10px] text-gray-500 uppercase tracking-widest font-semibold">Analyzed</p>
               </div>
             </div>
+            <button
+              onClick={handleDemo}
+              disabled={loadingDemo}
+              className="flex items-center gap-2 px-5 py-2.5 bg-navy-800 hover:bg-navy-700 text-accent-blue border border-accent-blue/30 text-sm font-semibold rounded-xl transition-all disabled:opacity-50"
+            >
+              {loadingDemo ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}
+              {loadingDemo ? 'Loading Demo...' : 'Try Demo'}
+            </button>
           </div>
 
           {/* Upload Zone */}
@@ -341,6 +363,14 @@ export default function Dashboard() {
               <FileArchive size={36} className="text-gray-700 mx-auto mb-3" />
               <p className="text-gray-500 text-sm">No bundles uploaded yet</p>
               <p className="text-xs text-gray-600 mt-1">Upload a support bundle above to get started</p>
+              <button
+                onClick={handleDemo}
+                disabled={loadingDemo}
+                className="mt-4 flex items-center gap-2 px-5 py-2.5 bg-accent-blue hover:bg-blue-600 text-white text-sm font-semibold rounded-xl transition-all mx-auto disabled:opacity-50"
+              >
+                {loadingDemo ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}
+                {loadingDemo ? 'Loading Demo...' : 'Try Demo with Sample Data'}
+              </button>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

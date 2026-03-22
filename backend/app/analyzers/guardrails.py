@@ -1,4 +1,5 @@
 """Shared guardrails for AI-powered analyzers."""
+
 from __future__ import annotations
 
 import logging
@@ -28,8 +29,12 @@ EXPLICIT_PATTERNS = re.compile(
 # Allowed values for AI output validation
 ALLOWED_SEVERITIES = {"critical", "warning", "info"}
 ALLOWED_CATEGORIES = {
-    "pod-health", "networking", "storage",
-    "configuration", "security", "resource-usage",
+    "pod-health",
+    "networking",
+    "storage",
+    "configuration",
+    "security",
+    "resource-usage",
 }
 
 MAX_FIELD_LENGTH = 2000

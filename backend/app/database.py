@@ -1,12 +1,13 @@
 """Database configuration and session management."""
+
 from __future__ import annotations
 
-import os
 import logging
-from datetime import datetime, timezone
+import os
+from datetime import UTC, datetime
 
-from sqlalchemy import create_engine, Column, String, Text, DateTime, Integer, Float, JSON
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy import JSON, Column, DateTime, Integer, String, Text, create_engine
+from sqlalchemy.orm import declarative_base, sessionmaker
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,7 @@ class BundleRecord(Base):
 
     id = Column(String, primary_key=True)
     filename = Column(String, nullable=False)
-    upload_time = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    upload_time = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     status = Column(String, default="uploaded")
     file_path = Column(String, default="")
 
@@ -43,7 +44,7 @@ class AnalysisRecord(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     bundle_id = Column(String, nullable=False, index=True)
-    analyzed_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    analyzed_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     status = Column(String, default="completed")
     health_score = Column(Integer, default=100)
     critical_count = Column(Integer, default=0)
@@ -69,7 +70,7 @@ class BundleChunk(Base):
     severity = Column(String, nullable=True)
     source_path = Column(String, nullable=True)
     token_count = Column(Integer, default=0)
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     metadata_json = Column(JSON, nullable=True)
 
 
@@ -78,7 +79,7 @@ class ChatSession(Base):
 
     id = Column(String, primary_key=True)
     bundle_id = Column(String, nullable=False, index=True)
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
 
 class ChatMessage(Base):
@@ -88,7 +89,7 @@ class ChatMessage(Base):
     session_id = Column(String, nullable=False, index=True)
     role = Column(String, nullable=False)  # user, assistant
     content = Column(Text, nullable=False)
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     retrieval_sources = Column(JSON, nullable=True)
 
 

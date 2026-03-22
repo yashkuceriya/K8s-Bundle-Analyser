@@ -1,11 +1,13 @@
 """Chat with Bundle - conversational Q&A against bundle data."""
+
 from __future__ import annotations
 
 import logging
 import os
 from typing import Any
 
-from app.analyzers.guardrails import INJECTION_PATTERNS as _OFF_TOPIC_PATTERNS, EXPLICIT_PATTERNS as _EXPLICIT_PATTERNS
+from app.analyzers.guardrails import EXPLICIT_PATTERNS as _EXPLICIT_PATTERNS
+from app.analyzers.guardrails import INJECTION_PATTERNS as _OFF_TOPIC_PATTERNS
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +89,10 @@ class BundleChat:
         rag_context = ""
         try:
             from app.rag.retriever import build_rag_context
-            rag_context = build_rag_context(question, self._bundle_id if hasattr(self, '_bundle_id') else "", max_tokens=4000)
+
+            rag_context = build_rag_context(
+                question, self._bundle_id if hasattr(self, "_bundle_id") else "", max_tokens=4000
+            )
         except Exception:
             pass
 
@@ -95,16 +100,19 @@ class BundleChat:
         retrieval_sources = []
         try:
             from app.rag.retriever import retrieve_for_question
+
             retrieved_chunks = retrieve_for_question(question, self._bundle_id, n_results=8)
             for chunk in retrieved_chunks[:5]:
                 meta = chunk.get("metadata", {})
-                retrieval_sources.append({
-                    "type": meta.get("chunk_type", "unknown"),
-                    "namespace": meta.get("namespace", ""),
-                    "pod": meta.get("pod", ""),
-                    "severity": meta.get("severity", ""),
-                    "relevance": round(1 - chunk.get("distance", 0), 2),
-                })
+                retrieval_sources.append(
+                    {
+                        "type": meta.get("chunk_type", "unknown"),
+                        "namespace": meta.get("namespace", ""),
+                        "pod": meta.get("pod", ""),
+                        "severity": meta.get("severity", ""),
+                        "relevance": round(1 - chunk.get("distance", 0), 2),
+                    }
+                )
         except Exception:
             pass
 
@@ -166,10 +174,7 @@ class BundleChat:
         pods = self.parsed_data.get("pods", [])
         nodes = self.parsed_data.get("nodes", [])
         namespaces = self.parsed_data.get("namespaces", [])
-        sections.append(
-            f"## Cluster Overview\nNodes: {len(nodes)}, Pods: {len(pods)}, "
-            f"Namespaces: {len(namespaces)}"
-        )
+        sections.append(f"## Cluster Overview\nNodes: {len(nodes)}, Pods: {len(pods)}, Namespaces: {len(namespaces)}")
 
         # --- Pod statuses ---
         pod_lines: list[str] = []
@@ -190,9 +195,7 @@ class BundleChat:
                     img = c.get("image", "")
                     if img:
                         images.append(img)
-            pod_lines.append(
-                f"- {ns}/{name}: phase={phase}, restarts={restarts}, images={','.join(images)}"
-            )
+            pod_lines.append(f"- {ns}/{name}: phase={phase}, restarts={restarts}, images={','.join(images)}")
         if pod_lines:
             section = "## Pod Statuses\n" + "\n".join(pod_lines)
             sections.append(section)
@@ -202,9 +205,7 @@ class BundleChat:
         for node in nodes:
             node_name = node.get("metadata", {}).get("name", "unknown")
             conditions = node.get("status", {}).get("conditions", []) or []
-            cond_parts = [
-                f"{c.get('type')}={c.get('status')}" for c in conditions
-            ]
+            cond_parts = [f"{c.get('type')}={c.get('status')}" for c in conditions]
             node_lines.append(f"- {node_name}: {', '.join(cond_parts)}")
         if node_lines:
             sections.append("## Node Conditions\n" + "\n".join(node_lines))
@@ -220,9 +221,7 @@ class BundleChat:
                 involved = ev.get("involvedObject", {})
                 resource = f"{involved.get('kind', '')}/{involved.get('name', '')}"
                 ev_lines.append(f"- {reason} on {resource}: {message}")
-            sections.append(
-                f"## Warning Events (last {len(ev_lines)})\n" + "\n".join(ev_lines)
-            )
+            sections.append(f"## Warning Events (last {len(ev_lines)})\n" + "\n".join(ev_lines))
 
         # --- Error/warn log excerpts (last 50 lines) ---
         logs = self.parsed_data.get("logs", [])
@@ -233,9 +232,7 @@ class BundleChat:
                 source = log.get("source", "")
                 msg = log.get("message", "")[:150]
                 log_lines.append(f"- [{source}] {msg}")
-            sections.append(
-                f"## Error/Warn Logs (last {len(log_lines)})\n" + "\n".join(log_lines)
-            )
+            sections.append(f"## Error/Warn Logs (last {len(log_lines)})\n" + "\n".join(log_lines))
 
         # --- Detected issues from analysis ---
         if self.analysis_result and hasattr(self.analysis_result, "issues"):
@@ -244,9 +241,7 @@ class BundleChat:
                 sev = issue.severity.value.upper() if hasattr(issue.severity, "value") else str(issue.severity)
                 issue_lines.append(f"- [{sev}] {issue.title}: {issue.description}")
             if issue_lines:
-                sections.append(
-                    f"## Detected Issues ({len(issue_lines)})\n" + "\n".join(issue_lines)
-                )
+                sections.append(f"## Detected Issues ({len(issue_lines)})\n" + "\n".join(issue_lines))
 
         # Trim to budget
         result = "\n\n".join(sections)
@@ -313,9 +308,7 @@ class BundleChat:
             return "No warning events found in this bundle."
 
         # --- Default ---
-        summary_parts: list[str] = [
-            "Set OPENROUTER_API_KEY for AI-powered Q&A. Here's what I found:"
-        ]
+        summary_parts: list[str] = ["Set OPENROUTER_API_KEY for AI-powered Q&A. Here's what I found:"]
         if issues:
             summary_parts.append("Detected issues:\n" + "\n".join(issues[:10]))
         else:
@@ -323,9 +316,7 @@ class BundleChat:
 
         pods = self.parsed_data.get("pods", [])
         nodes = self.parsed_data.get("nodes", [])
-        summary_parts.append(
-            f"Cluster has {len(nodes)} node(s) and {len(pods)} pod(s)."
-        )
+        summary_parts.append(f"Cluster has {len(nodes)} node(s) and {len(pods)} pod(s).")
         return "\n\n".join(summary_parts)
 
     # ------------------------------------------------------------------
@@ -368,8 +359,6 @@ class BundleChat:
         for node in self.parsed_data.get("nodes", []):
             node_name = node.get("metadata", {}).get("name", "unknown")
             conditions = node.get("status", {}).get("conditions", []) or []
-            cond_parts = [
-                f"{c.get('type')}={c.get('status')}" for c in conditions
-            ]
+            cond_parts = [f"{c.get('type')}={c.get('status')}" for c in conditions]
             lines.append(f"- {node_name}: {', '.join(cond_parts)}")
         return lines

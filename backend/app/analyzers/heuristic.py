@@ -74,29 +74,31 @@ class HeuristicAnalyzer:
                 if reason == "CrashLoopBackOff":
                     restart_count = cs.get("restartCount", 0)
                     container_name = cs.get("name", "unknown")
-                    self.issues.append(Issue(
-                        severity=Severity.critical,
-                        title=f"CrashLoopBackOff: {name}/{container_name}",
-                        category="pod-health",
-                        resource=f"pod/{name}",
-                        namespace=ns,
-                        description=(
-                            f"Container '{container_name}' in pod '{name}' is in CrashLoopBackOff "
-                            f"with {restart_count} restarts. The container is repeatedly crashing."
-                        ),
-                        evidence=[
-                            f"Container state: CrashLoopBackOff",
-                            f"Restart count: {restart_count}",
-                            f"Message: {waiting.get('message', 'N/A')}",
-                        ],
-                        remediation=(
-                            "Check container logs for crash reason: "
-                            f"kubectl logs {name} -c {container_name} -n {ns} --previous. "
-                            "Common causes: application errors, missing config/secrets, "
-                            "insufficient resources, or failed health checks."
-                        ),
-                        ai_confidence=0.95,
-                    ))
+                    self.issues.append(
+                        Issue(
+                            severity=Severity.critical,
+                            title=f"CrashLoopBackOff: {name}/{container_name}",
+                            category="pod-health",
+                            resource=f"pod/{name}",
+                            namespace=ns,
+                            description=(
+                                f"Container '{container_name}' in pod '{name}' is in CrashLoopBackOff "
+                                f"with {restart_count} restarts. The container is repeatedly crashing."
+                            ),
+                            evidence=[
+                                "Container state: CrashLoopBackOff",
+                                f"Restart count: {restart_count}",
+                                f"Message: {waiting.get('message', 'N/A')}",
+                            ],
+                            remediation=(
+                                "Check container logs for crash reason: "
+                                f"kubectl logs {name} -c {container_name} -n {ns} --previous. "
+                                "Common causes: application errors, missing config/secrets, "
+                                "insufficient resources, or failed health checks."
+                            ),
+                            ai_confidence=0.95,
+                        )
+                    )
 
     def _check_image_pull_errors(self) -> None:
         for pod in self.data.get("pods", []):
@@ -107,29 +109,31 @@ class HeuristicAnalyzer:
                 if reason in ("ImagePullBackOff", "ErrImagePull"):
                     image = cs.get("image", "unknown")
                     container_name = cs.get("name", "unknown")
-                    self.issues.append(Issue(
-                        severity=Severity.critical,
-                        title=f"Image pull failure: {name}/{container_name}",
-                        category="pod-health",
-                        resource=f"pod/{name}",
-                        namespace=ns,
-                        description=(
-                            f"Container '{container_name}' in pod '{name}' cannot pull image '{image}'. "
-                            f"Reason: {reason}."
-                        ),
-                        evidence=[
-                            f"Image: {image}",
-                            f"Reason: {reason}",
-                            f"Message: {waiting.get('message', 'N/A')}",
-                        ],
-                        remediation=(
-                            "Verify the image name and tag are correct. Check that image pull secrets "
-                            "are configured if using a private registry. Ensure network connectivity "
-                            "to the container registry. "
-                            f"kubectl describe pod {name} -n {ns} for more details."
-                        ),
-                        ai_confidence=0.95,
-                    ))
+                    self.issues.append(
+                        Issue(
+                            severity=Severity.critical,
+                            title=f"Image pull failure: {name}/{container_name}",
+                            category="pod-health",
+                            resource=f"pod/{name}",
+                            namespace=ns,
+                            description=(
+                                f"Container '{container_name}' in pod '{name}' cannot pull image '{image}'. "
+                                f"Reason: {reason}."
+                            ),
+                            evidence=[
+                                f"Image: {image}",
+                                f"Reason: {reason}",
+                                f"Message: {waiting.get('message', 'N/A')}",
+                            ],
+                            remediation=(
+                                "Verify the image name and tag are correct. Check that image pull secrets "
+                                "are configured if using a private registry. Ensure network connectivity "
+                                "to the container registry. "
+                                f"kubectl describe pod {name} -n {ns} for more details."
+                            ),
+                            ai_confidence=0.95,
+                        )
+                    )
 
     def _check_oom_killed(self) -> None:
         for pod in self.data.get("pods", []):
@@ -140,29 +144,31 @@ class HeuristicAnalyzer:
                 reason = terminated.get("reason", "")
                 if reason == "OOMKilled":
                     container_name = cs.get("name", "unknown")
-                    self.issues.append(Issue(
-                        severity=Severity.critical,
-                        title=f"OOMKilled: {name}/{container_name}",
-                        category="resource-usage",
-                        resource=f"pod/{name}",
-                        namespace=ns,
-                        description=(
-                            f"Container '{container_name}' in pod '{name}' was OOMKilled. "
-                            "The container exceeded its memory limit and was terminated by the kernel."
-                        ),
-                        evidence=[
-                            f"Termination reason: OOMKilled",
-                            f"Exit code: {terminated.get('exitCode', 'N/A')}",
-                            f"Finished at: {terminated.get('finishedAt', 'N/A')}",
-                        ],
-                        remediation=(
-                            "Increase the container's memory limit in the pod spec. "
-                            "Investigate the application's memory usage for leaks. "
-                            "Consider setting appropriate memory requests and limits. "
-                            f"Current container: {container_name} in pod {name} namespace {ns}."
-                        ),
-                        ai_confidence=0.95,
-                    ))
+                    self.issues.append(
+                        Issue(
+                            severity=Severity.critical,
+                            title=f"OOMKilled: {name}/{container_name}",
+                            category="resource-usage",
+                            resource=f"pod/{name}",
+                            namespace=ns,
+                            description=(
+                                f"Container '{container_name}' in pod '{name}' was OOMKilled. "
+                                "The container exceeded its memory limit and was terminated by the kernel."
+                            ),
+                            evidence=[
+                                "Termination reason: OOMKilled",
+                                f"Exit code: {terminated.get('exitCode', 'N/A')}",
+                                f"Finished at: {terminated.get('finishedAt', 'N/A')}",
+                            ],
+                            remediation=(
+                                "Increase the container's memory limit in the pod spec. "
+                                "Investigate the application's memory usage for leaks. "
+                                "Consider setting appropriate memory requests and limits. "
+                                f"Current container: {container_name} in pod {name} namespace {ns}."
+                            ),
+                            ai_confidence=0.95,
+                        )
+                    )
 
     def _check_pending_pods(self) -> None:
         for pod in self.data.get("pods", []):
@@ -171,29 +177,29 @@ class HeuristicAnalyzer:
             if phase == "Pending":
                 conditions = pod.get("status", {}).get("conditions", []) or []
                 condition_msgs = [
-                    f"{c.get('type')}: {c.get('message', 'N/A')}"
-                    for c in conditions
-                    if c.get("status") != "True"
+                    f"{c.get('type')}: {c.get('message', 'N/A')}" for c in conditions if c.get("status") != "True"
                 ]
-                self.issues.append(Issue(
-                    severity=Severity.warning,
-                    title=f"Pod pending: {name}",
-                    category="pod-health",
-                    resource=f"pod/{name}",
-                    namespace=ns,
-                    description=(
-                        f"Pod '{name}' in namespace '{ns}' is stuck in Pending state. "
-                        "This often indicates scheduling problems."
-                    ),
-                    evidence=condition_msgs or ["Phase: Pending"],
-                    remediation=(
-                        "Check if the cluster has sufficient resources (CPU, memory). "
-                        "Verify node selectors, tolerations, and affinity rules. "
-                        "Check for unbound PersistentVolumeClaims. "
-                        f"kubectl describe pod {name} -n {ns}"
-                    ),
-                    ai_confidence=0.90,
-                ))
+                self.issues.append(
+                    Issue(
+                        severity=Severity.warning,
+                        title=f"Pod pending: {name}",
+                        category="pod-health",
+                        resource=f"pod/{name}",
+                        namespace=ns,
+                        description=(
+                            f"Pod '{name}' in namespace '{ns}' is stuck in Pending state. "
+                            "This often indicates scheduling problems."
+                        ),
+                        evidence=condition_msgs or ["Phase: Pending"],
+                        remediation=(
+                            "Check if the cluster has sufficient resources (CPU, memory). "
+                            "Verify node selectors, tolerations, and affinity rules. "
+                            "Check for unbound PersistentVolumeClaims. "
+                            f"kubectl describe pod {name} -n {ns}"
+                        ),
+                        ai_confidence=0.90,
+                    )
+                )
 
     def _check_high_restart_counts(self) -> None:
         for pod in self.data.get("pods", []):
@@ -206,27 +212,29 @@ class HeuristicAnalyzer:
                     waiting = cs.get("state", {}).get("waiting", {})
                     if waiting.get("reason") == "CrashLoopBackOff":
                         continue
-                    self.issues.append(Issue(
-                        severity=Severity.warning,
-                        title=f"High restart count: {name}/{container_name} ({restart_count})",
-                        category="pod-health",
-                        resource=f"pod/{name}",
-                        namespace=ns,
-                        description=(
-                            f"Container '{container_name}' in pod '{name}' has restarted "
-                            f"{restart_count} times, indicating instability."
-                        ),
-                        evidence=[
-                            f"Restart count: {restart_count}",
-                            f"Container: {container_name}",
-                        ],
-                        remediation=(
-                            "Investigate the cause of frequent restarts. Check container logs "
-                            "for errors, verify resource limits, and review liveness/readiness probes. "
-                            f"kubectl logs {name} -c {container_name} -n {ns} --previous"
-                        ),
-                        ai_confidence=0.90,
-                    ))
+                    self.issues.append(
+                        Issue(
+                            severity=Severity.warning,
+                            title=f"High restart count: {name}/{container_name} ({restart_count})",
+                            category="pod-health",
+                            resource=f"pod/{name}",
+                            namespace=ns,
+                            description=(
+                                f"Container '{container_name}' in pod '{name}' has restarted "
+                                f"{restart_count} times, indicating instability."
+                            ),
+                            evidence=[
+                                f"Restart count: {restart_count}",
+                                f"Container: {container_name}",
+                            ],
+                            remediation=(
+                                "Investigate the cause of frequent restarts. Check container logs "
+                                "for errors, verify resource limits, and review liveness/readiness probes. "
+                                f"kubectl logs {name} -c {container_name} -n {ns} --previous"
+                            ),
+                            ai_confidence=0.90,
+                        )
+                    )
 
     def _check_failed_events(self) -> None:
         for event in self.data.get("events", []):
@@ -236,8 +244,15 @@ class HeuristicAnalyzer:
                 continue
             # Check for significant failure patterns
             # Note: "Unhealthy" is handled by _check_probe_failures with better severity logic
-            fail_patterns = ["Failed", "Error", "BackOff", "FailedScheduling",
-                             "FailedMount", "FailedAttachVolume", "FailedCreate"]
+            fail_patterns = [
+                "Failed",
+                "Error",
+                "BackOff",
+                "FailedScheduling",
+                "FailedMount",
+                "FailedAttachVolume",
+                "FailedCreate",
+            ]
             if not any(pat.lower() in reason.lower() for pat in fail_patterns):
                 continue
 
@@ -248,25 +263,27 @@ class HeuristicAnalyzer:
             ns = involved.get("namespace", "")
             count = event.get("count", 1)
 
-            self.issues.append(Issue(
-                severity=Severity.warning,
-                title=f"Warning event: {reason} on {resource_kind}/{resource_name}",
-                category="pod-health",
-                resource=f"{resource_kind}/{resource_name}" if resource_kind else None,
-                namespace=ns or None,
-                description=f"Kubernetes warning event ({reason}) occurred {count} time(s): {message}",
-                evidence=[
-                    f"Reason: {reason}",
-                    f"Message: {message}",
-                    f"Count: {count}",
-                    f"Last seen: {event.get('lastTimestamp', 'N/A')}",
-                ],
-                remediation=(
-                    f"Investigate the {reason} event on {resource_kind}/{resource_name}. "
-                    f"Check the resource status and logs for more details."
-                ),
-                ai_confidence=0.85,
-            ))
+            self.issues.append(
+                Issue(
+                    severity=Severity.warning,
+                    title=f"Warning event: {reason} on {resource_kind}/{resource_name}",
+                    category="pod-health",
+                    resource=f"{resource_kind}/{resource_name}" if resource_kind else None,
+                    namespace=ns or None,
+                    description=f"Kubernetes warning event ({reason}) occurred {count} time(s): {message}",
+                    evidence=[
+                        f"Reason: {reason}",
+                        f"Message: {message}",
+                        f"Count: {count}",
+                        f"Last seen: {event.get('lastTimestamp', 'N/A')}",
+                    ],
+                    remediation=(
+                        f"Investigate the {reason} event on {resource_kind}/{resource_name}. "
+                        f"Check the resource status and logs for more details."
+                    ),
+                    ai_confidence=0.85,
+                )
+            )
 
     def _check_node_not_ready(self) -> None:
         for node in self.data.get("nodes", []):
@@ -275,28 +292,30 @@ class HeuristicAnalyzer:
             conditions = node.get("status", {}).get("conditions", []) or []
             for cond in conditions:
                 if cond.get("type") == "Ready" and cond.get("status") != "True":
-                    self.issues.append(Issue(
-                        severity=Severity.critical,
-                        title=f"Node not ready: {node_name}",
-                        category="pod-health",
-                        resource=f"node/{node_name}",
-                        description=(
-                            f"Node '{node_name}' is not in Ready state. "
-                            f"Reason: {cond.get('reason', 'N/A')}. "
-                            f"Message: {cond.get('message', 'N/A')}."
-                        ),
-                        evidence=[
-                            f"Condition: Ready={cond.get('status')}",
-                            f"Reason: {cond.get('reason', 'N/A')}",
-                            f"Message: {cond.get('message', 'N/A')}",
-                            f"Last transition: {cond.get('lastTransitionTime', 'N/A')}",
-                        ],
-                        remediation=(
-                            f"Check node '{node_name}' for kubelet issues, network problems, "
-                            "or resource exhaustion. Run: kubectl describe node " + node_name
-                        ),
-                        ai_confidence=0.95,
-                    ))
+                    self.issues.append(
+                        Issue(
+                            severity=Severity.critical,
+                            title=f"Node not ready: {node_name}",
+                            category="pod-health",
+                            resource=f"node/{node_name}",
+                            description=(
+                                f"Node '{node_name}' is not in Ready state. "
+                                f"Reason: {cond.get('reason', 'N/A')}. "
+                                f"Message: {cond.get('message', 'N/A')}."
+                            ),
+                            evidence=[
+                                f"Condition: Ready={cond.get('status')}",
+                                f"Reason: {cond.get('reason', 'N/A')}",
+                                f"Message: {cond.get('message', 'N/A')}",
+                                f"Last transition: {cond.get('lastTransitionTime', 'N/A')}",
+                            ],
+                            remediation=(
+                                f"Check node '{node_name}' for kubelet issues, network problems, "
+                                "or resource exhaustion. Run: kubectl describe node " + node_name
+                            ),
+                            ai_confidence=0.95,
+                        )
+                    )
 
     def _check_pvc_issues(self) -> None:
         pvs = self.data.get("pvs") or []
@@ -306,19 +325,21 @@ class HeuristicAnalyzer:
             phase = pv.get("status", {}).get("phase", "")
             pv_name = pv.get("metadata", {}).get("name", "unknown")
             if phase in ("Pending", "Lost"):
-                self.issues.append(Issue(
-                    severity=Severity.warning if phase == "Pending" else Severity.critical,
-                    title=f"PV {phase}: {pv_name}",
-                    category="storage",
-                    resource=f"pv/{pv_name}",
-                    description=f"PersistentVolume '{pv_name}' is in {phase} state.",
-                    evidence=[f"PV phase: {phase}"],
-                    remediation=(
-                        f"Check PV '{pv_name}' configuration and the underlying storage backend. "
-                        "Verify storage class provisioner is working correctly."
-                    ),
-                    ai_confidence=0.90,
-                ))
+                self.issues.append(
+                    Issue(
+                        severity=Severity.warning if phase == "Pending" else Severity.critical,
+                        title=f"PV {phase}: {pv_name}",
+                        category="storage",
+                        resource=f"pv/{pv_name}",
+                        description=f"PersistentVolume '{pv_name}' is in {phase} state.",
+                        evidence=[f"PV phase: {phase}"],
+                        remediation=(
+                            f"Check PV '{pv_name}' configuration and the underlying storage backend. "
+                            "Verify storage class provisioner is working correctly."
+                        ),
+                        ai_confidence=0.90,
+                    )
+                )
 
     def _check_certificate_expiration(self) -> None:
         cert_pattern = re.compile(r"certific\w*.*expir", re.IGNORECASE)
@@ -331,21 +352,23 @@ class HeuristicAnalyzer:
                     break
 
         if found_lines:
-            self.issues.append(Issue(
-                severity=Severity.warning,
-                title="Certificate expiration warnings detected",
-                category="security",
-                description=(
-                    "Log entries mention certificate expiration. Expired or soon-to-expire "
-                    "certificates can cause TLS failures and service disruptions."
-                ),
-                evidence=found_lines,
-                remediation=(
-                    "Review and renew expiring certificates. For Kubernetes-managed certificates, "
-                    "check cert-manager or kubeadm certs. Run: kubeadm certs check-expiration"
-                ),
-                ai_confidence=0.85,
-            ))
+            self.issues.append(
+                Issue(
+                    severity=Severity.warning,
+                    title="Certificate expiration warnings detected",
+                    category="security",
+                    description=(
+                        "Log entries mention certificate expiration. Expired or soon-to-expire "
+                        "certificates can cause TLS failures and service disruptions."
+                    ),
+                    evidence=found_lines,
+                    remediation=(
+                        "Review and renew expiring certificates. For Kubernetes-managed certificates, "
+                        "check cert-manager or kubeadm certs. Run: kubeadm certs check-expiration"
+                    ),
+                    ai_confidence=0.85,
+                )
+            )
 
     def _check_resource_quota_exceeded(self) -> None:
         quota_pattern = re.compile(r"(exceed|forbidden).*quota", re.IGNORECASE)
@@ -369,19 +392,21 @@ class HeuristicAnalyzer:
                         break
 
         if found:
-            self.issues.append(Issue(
-                severity=Severity.warning,
-                title="Resource quota exceeded",
-                category="resource-usage",
-                description="Resource quota limits have been exceeded, preventing resource creation.",
-                evidence=found,
-                remediation=(
-                    "Review ResourceQuota objects and current resource usage. "
-                    "Increase quotas or reduce resource requests. "
-                    "kubectl get resourcequota --all-namespaces"
-                ),
-                ai_confidence=0.90,
-            ))
+            self.issues.append(
+                Issue(
+                    severity=Severity.warning,
+                    title="Resource quota exceeded",
+                    category="resource-usage",
+                    description="Resource quota limits have been exceeded, preventing resource creation.",
+                    evidence=found,
+                    remediation=(
+                        "Review ResourceQuota objects and current resource usage. "
+                        "Increase quotas or reduce resource requests. "
+                        "kubectl get resourcequota --all-namespaces"
+                    ),
+                    ai_confidence=0.90,
+                )
+            )
 
     def _check_dns_failures(self) -> None:
         dns_pattern = re.compile(
@@ -397,19 +422,21 @@ class HeuristicAnalyzer:
                     break
 
         if found:
-            self.issues.append(Issue(
-                severity=Severity.warning,
-                title="DNS resolution failures detected",
-                category="networking",
-                description="Log entries indicate DNS resolution failures, which can cause service connectivity issues.",
-                evidence=found,
-                remediation=(
-                    "Check CoreDNS pods are running: kubectl get pods -n kube-system -l k8s-app=kube-dns. "
-                    "Verify DNS service: kubectl get svc -n kube-system kube-dns. "
-                    "Test resolution from a pod: kubectl exec -it <pod> -- nslookup kubernetes.default"
-                ),
-                ai_confidence=0.85,
-            ))
+            self.issues.append(
+                Issue(
+                    severity=Severity.warning,
+                    title="DNS resolution failures detected",
+                    category="networking",
+                    description="Log entries indicate DNS resolution failures, which can cause service connectivity issues.",
+                    evidence=found,
+                    remediation=(
+                        "Check CoreDNS pods are running: kubectl get pods -n kube-system -l k8s-app=kube-dns. "
+                        "Verify DNS service: kubectl get svc -n kube-system kube-dns. "
+                        "Test resolution from a pod: kubectl exec -it <pod> -- nslookup kubernetes.default"
+                    ),
+                    ai_confidence=0.85,
+                )
+            )
 
     def _check_connection_errors(self) -> None:
         conn_pattern = re.compile(
@@ -429,22 +456,24 @@ class HeuristicAnalyzer:
                     break
 
         if found:
-            self.issues.append(Issue(
-                severity=Severity.warning,
-                title=f"Connection errors in {len(sources)} source(s)",
-                category="networking",
-                description=(
-                    "Connection refused or timeout errors detected in logs. "
-                    "This may indicate services are down, misconfigured, or network policies are blocking traffic."
-                ),
-                evidence=found[:10],
-                remediation=(
-                    "Verify target services are running and healthy. "
-                    "Check network policies and firewall rules. "
-                    "Ensure service endpoints are correct: kubectl get endpoints <service-name>"
-                ),
-                ai_confidence=0.85,
-            ))
+            self.issues.append(
+                Issue(
+                    severity=Severity.warning,
+                    title=f"Connection errors in {len(sources)} source(s)",
+                    category="networking",
+                    description=(
+                        "Connection refused or timeout errors detected in logs. "
+                        "This may indicate services are down, misconfigured, or network policies are blocking traffic."
+                    ),
+                    evidence=found[:10],
+                    remediation=(
+                        "Verify target services are running and healthy. "
+                        "Check network policies and firewall rules. "
+                        "Ensure service endpoints are correct: kubectl get endpoints <service-name>"
+                    ),
+                    ai_confidence=0.85,
+                )
+            )
 
     def _check_evicted_pods(self) -> None:
         for pod in self.data.get("pods", []):
@@ -453,24 +482,26 @@ class HeuristicAnalyzer:
             reason = pod.get("status", {}).get("reason", "")
             if phase == "Failed" and reason == "Evicted":
                 message = pod.get("status", {}).get("message", "")
-                self.issues.append(Issue(
-                    severity=Severity.warning,
-                    title=f"Evicted pod: {name}",
-                    category="resource-usage",
-                    resource=f"pod/{name}",
-                    namespace=ns,
-                    description=f"Pod '{name}' was evicted. {message}",
-                    evidence=[
-                        f"Phase: Failed, Reason: Evicted",
-                        f"Message: {message}" if message else "No message provided",
-                    ],
-                    remediation=(
-                        "Eviction usually occurs due to node resource pressure (disk, memory). "
-                        "Check node conditions and resource usage. "
-                        "Consider setting appropriate resource requests and priority classes."
-                    ),
-                    ai_confidence=0.90,
-                ))
+                self.issues.append(
+                    Issue(
+                        severity=Severity.warning,
+                        title=f"Evicted pod: {name}",
+                        category="resource-usage",
+                        resource=f"pod/{name}",
+                        namespace=ns,
+                        description=f"Pod '{name}' was evicted. {message}",
+                        evidence=[
+                            "Phase: Failed, Reason: Evicted",
+                            f"Message: {message}" if message else "No message provided",
+                        ],
+                        remediation=(
+                            "Eviction usually occurs due to node resource pressure (disk, memory). "
+                            "Check node conditions and resource usage. "
+                            "Consider setting appropriate resource requests and priority classes."
+                        ),
+                        ai_confidence=0.90,
+                    )
+                )
 
     def _check_node_pressure(self) -> None:
         pressure_types = ["DiskPressure", "MemoryPressure", "PIDPressure"]
@@ -479,27 +510,29 @@ class HeuristicAnalyzer:
             conditions = node.get("status", {}).get("conditions", []) or []
             for cond in conditions:
                 if cond.get("type") in pressure_types and cond.get("status") == "True":
-                    self.issues.append(Issue(
-                        severity=Severity.critical,
-                        title=f"{cond['type']} on node {node_name}",
-                        category="resource-usage",
-                        resource=f"node/{node_name}",
-                        description=(
-                            f"Node '{node_name}' has {cond['type']} condition active. "
-                            f"Message: {cond.get('message', 'N/A')}"
-                        ),
-                        evidence=[
-                            f"Condition: {cond['type']}=True",
-                            f"Reason: {cond.get('reason', 'N/A')}",
-                            f"Message: {cond.get('message', 'N/A')}",
-                        ],
-                        remediation=(
-                            f"Node '{node_name}' is under resource pressure. "
-                            "Free up resources, add capacity, or evict low-priority workloads. "
-                            f"kubectl describe node {node_name}"
-                        ),
-                        ai_confidence=0.95,
-                    ))
+                    self.issues.append(
+                        Issue(
+                            severity=Severity.critical,
+                            title=f"{cond['type']} on node {node_name}",
+                            category="resource-usage",
+                            resource=f"node/{node_name}",
+                            description=(
+                                f"Node '{node_name}' has {cond['type']} condition active. "
+                                f"Message: {cond.get('message', 'N/A')}"
+                            ),
+                            evidence=[
+                                f"Condition: {cond['type']}=True",
+                                f"Reason: {cond.get('reason', 'N/A')}",
+                                f"Message: {cond.get('message', 'N/A')}",
+                            ],
+                            remediation=(
+                                f"Node '{node_name}' is under resource pressure. "
+                                "Free up resources, add capacity, or evict low-priority workloads. "
+                                f"kubectl describe node {node_name}"
+                            ),
+                            ai_confidence=0.95,
+                        )
+                    )
 
     def _check_deprecated_apis(self) -> None:
         deprecated_patterns = [
@@ -529,22 +562,24 @@ class HeuristicAnalyzer:
                         break
 
         if found:
-            self.issues.append(Issue(
-                severity=Severity.info,
-                title="Deprecated API versions in use",
-                category="configuration",
-                description=(
-                    "Some resources use deprecated Kubernetes API versions. "
-                    "These may stop working after cluster upgrades."
-                ),
-                evidence=found[:10],
-                remediation=(
-                    "Update manifests to use current API versions. "
-                    "Use 'kubectl convert' or update apiVersion fields. "
-                    "See https://kubernetes.io/docs/reference/using-api/deprecation-guide/"
-                ),
-                ai_confidence=0.90,
-            ))
+            self.issues.append(
+                Issue(
+                    severity=Severity.info,
+                    title="Deprecated API versions in use",
+                    category="configuration",
+                    description=(
+                        "Some resources use deprecated Kubernetes API versions. "
+                        "These may stop working after cluster upgrades."
+                    ),
+                    evidence=found[:10],
+                    remediation=(
+                        "Update manifests to use current API versions. "
+                        "Use 'kubectl convert' or update apiVersion fields. "
+                        "See https://kubernetes.io/docs/reference/using-api/deprecation-guide/"
+                    ),
+                    ai_confidence=0.90,
+                )
+            )
 
     def _check_probe_failures(self) -> None:
         """Detect liveness/readiness probe failures from events and logs."""
@@ -564,8 +599,10 @@ class HeuristicAnalyzer:
 
             if key not in pod_probes:
                 pod_probes[key] = {
-                    "pod_name": pod_name, "ns": ns,
-                    "total_count": 0, "has_liveness": False,
+                    "pod_name": pod_name,
+                    "ns": ns,
+                    "total_count": 0,
+                    "has_liveness": False,
                     "messages": [],
                 }
             info = pod_probes[key]
@@ -581,25 +618,26 @@ class HeuristicAnalyzer:
             # Liveness failures are critical (cause restarts); readiness is warning
             severity = Severity.critical if info["has_liveness"] else Severity.warning
 
-            self.issues.append(Issue(
-                severity=severity,
-                title=f"Probe failure: {pod_name}",
-                category="pod-health",
-                resource=f"pod/{pod_name}",
-                namespace=ns or None,
-                description=(
-                    f"Pod '{pod_name}' has failing health probes. "
-                    f"Total occurrences: {info['total_count']}."
-                ),
-                evidence=[f"Unhealthy: {m}" for m in info["messages"]],
-                remediation=(
-                    "Review the probe configuration. Common causes: "
-                    "incorrect port, path, or timeout settings. "
-                    "Check if the application starts slowly and needs a higher initialDelaySeconds. "
-                    f"kubectl describe pod {pod_name}" + (f" -n {ns}" if ns else "")
-                ),
-                ai_confidence=0.90,
-            ))
+            self.issues.append(
+                Issue(
+                    severity=severity,
+                    title=f"Probe failure: {pod_name}",
+                    category="pod-health",
+                    resource=f"pod/{pod_name}",
+                    namespace=ns or None,
+                    description=(
+                        f"Pod '{pod_name}' has failing health probes. Total occurrences: {info['total_count']}."
+                    ),
+                    evidence=[f"Unhealthy: {m}" for m in info["messages"]],
+                    remediation=(
+                        "Review the probe configuration. Common causes: "
+                        "incorrect port, path, or timeout settings. "
+                        "Check if the application starts slowly and needs a higher initialDelaySeconds. "
+                        f"kubectl describe pod {pod_name}" + (f" -n {ns}" if ns else "")
+                    ),
+                    ai_confidence=0.90,
+                )
+            )
 
     def _check_job_failures(self) -> None:
         """Detect failed Kubernetes Jobs."""
@@ -625,27 +663,29 @@ class HeuristicAnalyzer:
                         reason = cond.get("reason", "")
                         break
 
-                self.issues.append(Issue(
-                    severity=Severity.warning,
-                    title=f"Job failed: {name}",
-                    category="pod-health",
-                    resource=f"job/{name}",
-                    namespace=ns,
-                    description=(
-                        f"Job '{name}' in namespace '{ns}' has {failed} failure(s). "
-                        f"{'Reason: ' + reason if reason else 'Check job events for details.'}"
-                    ),
-                    evidence=[
-                        f"Failed count: {failed}",
-                        f"Reason: {reason}" if reason else "No failure reason available",
-                    ],
-                    remediation=(
-                        f"Check job pod logs: kubectl logs job/{name} -n {ns}. "
-                        f"Describe the job: kubectl describe job {name} -n {ns}. "
-                        "Common causes: application errors, misconfigured commands, or resource limits."
-                    ),
-                    ai_confidence=0.90,
-                ))
+                self.issues.append(
+                    Issue(
+                        severity=Severity.warning,
+                        title=f"Job failed: {name}",
+                        category="pod-health",
+                        resource=f"job/{name}",
+                        namespace=ns,
+                        description=(
+                            f"Job '{name}' in namespace '{ns}' has {failed} failure(s). "
+                            f"{'Reason: ' + reason if reason else 'Check job events for details.'}"
+                        ),
+                        evidence=[
+                            f"Failed count: {failed}",
+                            f"Reason: {reason}" if reason else "No failure reason available",
+                        ],
+                        remediation=(
+                            f"Check job pod logs: kubectl logs job/{name} -n {ns}. "
+                            f"Describe the job: kubectl describe job {name} -n {ns}. "
+                            "Common causes: application errors, misconfigured commands, or resource limits."
+                        ),
+                        ai_confidence=0.90,
+                    )
+                )
 
     def _check_cronjob_issues(self) -> None:
         """Detect suspended or problematic CronJobs."""
@@ -668,24 +708,23 @@ class HeuristicAnalyzer:
                 issues_found.append("CronJob has never been scheduled")
 
             if issues_found:
-                self.issues.append(Issue(
-                    severity=Severity.warning,
-                    title=f"CronJob issue: {name}",
-                    category="pod-health",
-                    resource=f"cronjob/{name}",
-                    namespace=ns,
-                    description=(
-                        f"CronJob '{name}' in namespace '{ns}' has issues: "
-                        + "; ".join(issues_found)
-                    ),
-                    evidence=issues_found,
-                    remediation=(
-                        f"Review the CronJob: kubectl describe cronjob {name} -n {ns}. "
-                        "If suspended, ensure it was intentional. "
-                        "Check for resource quota issues preventing job creation."
-                    ),
-                    ai_confidence=0.85,
-                ))
+                self.issues.append(
+                    Issue(
+                        severity=Severity.warning,
+                        title=f"CronJob issue: {name}",
+                        category="pod-health",
+                        resource=f"cronjob/{name}",
+                        namespace=ns,
+                        description=(f"CronJob '{name}' in namespace '{ns}' has issues: " + "; ".join(issues_found)),
+                        evidence=issues_found,
+                        remediation=(
+                            f"Review the CronJob: kubectl describe cronjob {name} -n {ns}. "
+                            "If suspended, ensure it was intentional. "
+                            "Check for resource quota issues preventing job creation."
+                        ),
+                        ai_confidence=0.85,
+                    )
+                )
 
     def _check_statefulset_stuck_rollout(self) -> None:
         """Detect StatefulSets with stuck rollouts."""
@@ -706,29 +745,31 @@ class HeuristicAnalyzer:
 
             if ready < desired:
                 severity = Severity.critical if ready == 0 else Severity.warning
-                self.issues.append(Issue(
-                    severity=severity,
-                    title=f"StatefulSet degraded: {name} ({ready}/{desired} ready)",
-                    category="pod-health",
-                    resource=f"statefulset/{name}",
-                    namespace=ns,
-                    description=(
-                        f"StatefulSet '{name}' in namespace '{ns}' has {ready}/{desired} "
-                        f"ready replicas. Current: {current}, Updated: {updated}."
-                    ),
-                    evidence=[
-                        f"Desired: {desired}",
-                        f"Ready: {ready}",
-                        f"Current: {current}",
-                        f"Updated: {updated}",
-                    ],
-                    remediation=(
-                        f"Check StatefulSet pods: kubectl get pods -l app={name} -n {ns}. "
-                        f"Describe: kubectl describe statefulset {name} -n {ns}. "
-                        "StatefulSet rollouts are sequential — a stuck pod blocks the rest."
-                    ),
-                    ai_confidence=0.90,
-                ))
+                self.issues.append(
+                    Issue(
+                        severity=severity,
+                        title=f"StatefulSet degraded: {name} ({ready}/{desired} ready)",
+                        category="pod-health",
+                        resource=f"statefulset/{name}",
+                        namespace=ns,
+                        description=(
+                            f"StatefulSet '{name}' in namespace '{ns}' has {ready}/{desired} "
+                            f"ready replicas. Current: {current}, Updated: {updated}."
+                        ),
+                        evidence=[
+                            f"Desired: {desired}",
+                            f"Ready: {ready}",
+                            f"Current: {current}",
+                            f"Updated: {updated}",
+                        ],
+                        remediation=(
+                            f"Check StatefulSet pods: kubectl get pods -l app={name} -n {ns}. "
+                            f"Describe: kubectl describe statefulset {name} -n {ns}. "
+                            "StatefulSet rollouts are sequential — a stuck pod blocks the rest."
+                        ),
+                        ai_confidence=0.90,
+                    )
+                )
 
     def _check_hpa_unable_to_scale(self) -> None:
         """Detect HPAs at max replicas or with scaling issues."""
@@ -759,24 +800,25 @@ class HeuristicAnalyzer:
                     issues_found.append(f"Unable to scale: {cond.get('message', '')[:200]}")
 
             if issues_found:
-                self.issues.append(Issue(
-                    severity=Severity.warning,
-                    title=f"HPA scaling issue: {name}",
-                    category="resource-usage",
-                    resource=f"hpa/{name}",
-                    namespace=ns,
-                    description=(
-                        f"HPA '{name}' in namespace '{ns}' has scaling concerns: "
-                        + "; ".join(issues_found)
-                    ),
-                    evidence=issues_found,
-                    remediation=(
-                        f"Review HPA status: kubectl describe hpa {name} -n {ns}. "
-                        "Consider increasing maxReplicas or adding node capacity. "
-                        "Check metrics-server is providing data."
-                    ),
-                    ai_confidence=0.85,
-                ))
+                self.issues.append(
+                    Issue(
+                        severity=Severity.warning,
+                        title=f"HPA scaling issue: {name}",
+                        category="resource-usage",
+                        resource=f"hpa/{name}",
+                        namespace=ns,
+                        description=(
+                            f"HPA '{name}' in namespace '{ns}' has scaling concerns: " + "; ".join(issues_found)
+                        ),
+                        evidence=issues_found,
+                        remediation=(
+                            f"Review HPA status: kubectl describe hpa {name} -n {ns}. "
+                            "Consider increasing maxReplicas or adding node capacity. "
+                            "Check metrics-server is providing data."
+                        ),
+                        ai_confidence=0.85,
+                    )
+                )
 
     def _check_ingress_misconfiguration(self) -> None:
         """Detect ingresses pointing to non-existent backend services."""
@@ -808,24 +850,26 @@ class HeuristicAnalyzer:
                         missing_backends.append(f"{host}{path} -> {svc_name}")
 
             if missing_backends:
-                self.issues.append(Issue(
-                    severity=Severity.warning,
-                    title=f"Ingress bad backend: {name}",
-                    category="networking",
-                    resource=f"ingress/{name}",
-                    namespace=ns,
-                    description=(
-                        f"Ingress '{name}' in namespace '{ns}' references services "
-                        f"that don't exist: {', '.join(missing_backends)}"
-                    ),
-                    evidence=[f"Missing: {b}" for b in missing_backends],
-                    remediation=(
-                        f"Verify backend services exist in namespace '{ns}'. "
-                        f"kubectl get services -n {ns}. "
-                        "Create the missing service or update the ingress backend."
-                    ),
-                    ai_confidence=0.90,
-                ))
+                self.issues.append(
+                    Issue(
+                        severity=Severity.warning,
+                        title=f"Ingress bad backend: {name}",
+                        category="networking",
+                        resource=f"ingress/{name}",
+                        namespace=ns,
+                        description=(
+                            f"Ingress '{name}' in namespace '{ns}' references services "
+                            f"that don't exist: {', '.join(missing_backends)}"
+                        ),
+                        evidence=[f"Missing: {b}" for b in missing_backends],
+                        remediation=(
+                            f"Verify backend services exist in namespace '{ns}'. "
+                            f"kubectl get services -n {ns}. "
+                            "Create the missing service or update the ingress backend."
+                        ),
+                        ai_confidence=0.90,
+                    )
+                )
 
     def _check_service_selector_mismatch(self) -> None:
         """Detect services whose selectors match zero pods."""
@@ -855,28 +899,30 @@ class HeuristicAnalyzer:
 
             if matching == 0:
                 selector_str = ", ".join(f"{k}={v}" for k, v in selector.items())
-                self.issues.append(Issue(
-                    severity=Severity.warning,
-                    title=f"Service has no endpoints: {name}",
-                    category="networking",
-                    resource=f"service/{name}",
-                    namespace=ns,
-                    description=(
-                        f"Service '{name}' in namespace '{ns}' selector ({selector_str}) "
-                        f"matches 0 pods. Traffic to this service will fail."
-                    ),
-                    evidence=[
-                        f"Selector: {selector_str}",
-                        f"Matching pods: 0",
-                        f"Service type: {svc_type}",
-                    ],
-                    remediation=(
-                        f"Check that pods with labels matching {selector_str} exist in namespace '{ns}'. "
-                        f"kubectl get pods -n {ns} -l {selector_str.replace(', ', ',')}. "
-                        "Verify the selector matches the pod template labels in the deployment."
-                    ),
-                    ai_confidence=0.90,
-                ))
+                self.issues.append(
+                    Issue(
+                        severity=Severity.warning,
+                        title=f"Service has no endpoints: {name}",
+                        category="networking",
+                        resource=f"service/{name}",
+                        namespace=ns,
+                        description=(
+                            f"Service '{name}' in namespace '{ns}' selector ({selector_str}) "
+                            f"matches 0 pods. Traffic to this service will fail."
+                        ),
+                        evidence=[
+                            f"Selector: {selector_str}",
+                            "Matching pods: 0",
+                            f"Service type: {svc_type}",
+                        ],
+                        remediation=(
+                            f"Check that pods with labels matching {selector_str} exist in namespace '{ns}'. "
+                            f"kubectl get pods -n {ns} -l {selector_str.replace(', ', ',')}. "
+                            "Verify the selector matches the pod template labels in the deployment."
+                        ),
+                        ai_confidence=0.90,
+                    )
+                )
 
     def _check_missing_resource_limits(self) -> None:
         """Detect containers without resource requests or limits."""
@@ -901,22 +947,24 @@ class HeuristicAnalyzer:
                 break
 
         if pods_missing:
-            self.issues.append(Issue(
-                severity=Severity.info,
-                title=f"Missing resource limits ({len(pods_missing)} container(s))",
-                category="configuration",
-                description=(
-                    f"{len(pods_missing)} container(s) have no resource requests or limits set. "
-                    "This can lead to resource contention, OOM kills, and unpredictable scheduling."
-                ),
-                evidence=pods_missing[:10],
-                remediation=(
-                    "Add resource requests and limits to all containers. "
-                    "Example: resources: {requests: {cpu: 100m, memory: 128Mi}, limits: {cpu: 500m, memory: 512Mi}}. "
-                    "Use kubectl top pods to estimate current usage."
-                ),
-                ai_confidence=0.85,
-            ))
+            self.issues.append(
+                Issue(
+                    severity=Severity.info,
+                    title=f"Missing resource limits ({len(pods_missing)} container(s))",
+                    category="configuration",
+                    description=(
+                        f"{len(pods_missing)} container(s) have no resource requests or limits set. "
+                        "This can lead to resource contention, OOM kills, and unpredictable scheduling."
+                    ),
+                    evidence=pods_missing[:10],
+                    remediation=(
+                        "Add resource requests and limits to all containers. "
+                        "Example: resources: {requests: {cpu: 100m, memory: 128Mi}, limits: {cpu: 500m, memory: 512Mi}}. "
+                        "Use kubectl top pods to estimate current usage."
+                    ),
+                    ai_confidence=0.85,
+                )
+            )
 
     def _check_init_container_failures(self) -> None:
         """Detect init containers stuck in failure states."""
@@ -931,29 +979,31 @@ class HeuristicAnalyzer:
                 reason = waiting.get("reason", "") or terminated.get("reason", "")
                 if reason in ("CrashLoopBackOff", "Error", "ImagePullBackOff", "ErrImagePull"):
                     exit_code = terminated.get("exitCode", "N/A")
-                    self.issues.append(Issue(
-                        severity=Severity.critical,
-                        title=f"Init container failed: {name}/{c_name}",
-                        category="pod-health",
-                        resource=f"pod/{name}",
-                        namespace=ns,
-                        description=(
-                            f"Init container '{c_name}' in pod '{name}' is in {reason} state. "
-                            f"This blocks the pod from starting."
-                        ),
-                        evidence=[
-                            f"Init container: {c_name}",
-                            f"State: {reason}",
-                            f"Exit code: {exit_code}",
-                            f"Message: {waiting.get('message', terminated.get('message', 'N/A'))}",
-                        ],
-                        remediation=(
-                            f"Check init container logs: kubectl logs {name} -c {c_name} -n {ns}. "
-                            "Init containers must complete successfully before the main containers start. "
-                            "Common causes: missing dependencies, incorrect commands, or network issues."
-                        ),
-                        ai_confidence=0.90,
-                    ))
+                    self.issues.append(
+                        Issue(
+                            severity=Severity.critical,
+                            title=f"Init container failed: {name}/{c_name}",
+                            category="pod-health",
+                            resource=f"pod/{name}",
+                            namespace=ns,
+                            description=(
+                                f"Init container '{c_name}' in pod '{name}' is in {reason} state. "
+                                f"This blocks the pod from starting."
+                            ),
+                            evidence=[
+                                f"Init container: {c_name}",
+                                f"State: {reason}",
+                                f"Exit code: {exit_code}",
+                                f"Message: {waiting.get('message', terminated.get('message', 'N/A'))}",
+                            ],
+                            remediation=(
+                                f"Check init container logs: kubectl logs {name} -c {c_name} -n {ns}. "
+                                "Init containers must complete successfully before the main containers start. "
+                                "Common causes: missing dependencies, incorrect commands, or network issues."
+                            ),
+                            ai_confidence=0.90,
+                        )
+                    )
 
     def _check_rbac_failures(self) -> None:
         """Detect RBAC/permission failures from events and logs."""
@@ -985,19 +1035,21 @@ class HeuristicAnalyzer:
                         break
 
         if found:
-            self.issues.append(Issue(
-                severity=Severity.warning,
-                title=f"RBAC/permission failures ({len(found)} occurrence(s))",
-                category="security",
-                description=(
-                    "RBAC authorization failures detected. Services may be unable to access "
-                    "required Kubernetes resources."
-                ),
-                evidence=found[:10],
-                remediation=(
-                    "Review RBAC configuration: kubectl get clusterrolebindings,rolebindings --all-namespaces. "
-                    "Check service account permissions. "
-                    "Ensure pods are using the correct service account with appropriate roles."
-                ),
-                ai_confidence=0.85,
-            ))
+            self.issues.append(
+                Issue(
+                    severity=Severity.warning,
+                    title=f"RBAC/permission failures ({len(found)} occurrence(s))",
+                    category="security",
+                    description=(
+                        "RBAC authorization failures detected. Services may be unable to access "
+                        "required Kubernetes resources."
+                    ),
+                    evidence=found[:10],
+                    remediation=(
+                        "Review RBAC configuration: kubectl get clusterrolebindings,rolebindings --all-namespaces. "
+                        "Check service account permissions. "
+                        "Ensure pods are using the correct service account with appropriate roles."
+                    ),
+                    ai_confidence=0.85,
+                )
+            )

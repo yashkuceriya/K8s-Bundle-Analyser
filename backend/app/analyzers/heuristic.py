@@ -44,6 +44,7 @@ class HeuristicAnalyzer:
         self._check_missing_resource_limits()
         self._check_init_container_failures()
         self._check_rbac_failures()
+        self._check_bundled_analysis()
         logger.info("Heuristic analysis found %d issues", len(self.issues))
         return self.issues
 
@@ -1051,5 +1052,45 @@ class HeuristicAnalyzer:
                         "Ensure pods are using the correct service account with appropriate roles."
                     ),
                     ai_confidence=0.85,
+                )
+            )
+
+    def _check_bundled_analysis(self) -> None:
+        """Import findings from the bundle's own analysis.json (troubleshoot.sh results)."""
+        analysis = self.data.get("analysis_json")
+        if not analysis:
+            return
+        # analysis.json can be a list or a dict with items
+        items = analysis if isinstance(analysis, list) else analysis.get("items", [analysis])
+        existing = {i.title.lower() for i in self.issues}
+
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            title = item.get("title", item.get("name", ""))
+            message = item.get("message", "")
+            if not title or not message:
+                continue
+            if title.lower() in existing:
+                continue
+
+            is_fail = item.get("isFail", False)
+            is_warn = item.get("isWarn", False)
+            is_pass = item.get("isPass", False)
+            if is_pass and not is_fail and not is_warn:
+                continue
+
+            severity = Severity.critical if is_fail else Severity.warning if is_warn else Severity.info
+            uri = item.get("uri", "")
+
+            self.issues.append(
+                Issue(
+                    severity=severity,
+                    title=f"[Preflight] {title}",
+                    category="configuration",
+                    description=message,
+                    evidence=["Source: troubleshoot.sh bundled analysis"],
+                    remediation=f"See: {uri}" if uri else "Review the troubleshoot.sh analyzer for this check.",
+                    ai_confidence=0.95,
                 )
             )

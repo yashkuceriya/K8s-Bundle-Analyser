@@ -340,15 +340,24 @@ class BundleParser:
         return self._extract_items(data)
 
     def _parse_resource_by_namespace(self, resource_type: str) -> list[dict]:
-        """Parse cluster-resources/<resource_type>/ directory or single file."""
+        """Parse cluster-resources/<resource_type>/ directory or single file.
+
+        Handles multiple bundle layouts:
+        - cluster-resources/<type>/<namespace>.json  (namespace-level lists)
+        - cluster-resources/<type>/<namespace>/<name>.json  (individual resource files)
+        - cluster-resources/<type>.json  (single file with all items)
+        """
         cr_dir = self._root / "cluster-resources"
         all_items: list[dict] = []
 
-        # Strategy 1: cluster-resources/<type>/<namespace>.json (standard layout)
         resource_dir = cr_dir / resource_type
         if resource_dir.exists() and resource_dir.is_dir():
-            for data_file in resource_dir.iterdir():
+            # Recursively find all JSON/YAML files under the resource dir
+            for data_file in resource_dir.rglob("*"):
                 if data_file.suffix not in (".json", ".yaml", ".yml"):
+                    continue
+                # Skip log files that live under pods/logs/
+                if "logs" in data_file.parts or data_file.suffix == ".log":
                     continue
                 try:
                     data = self._parse_data_file(data_file)
@@ -357,7 +366,7 @@ class BundleParser:
                 except Exception as e:
                     logger.warning("Error parsing %s: %s", data_file, e)
 
-        # Strategy 2: cluster-resources/<type>.json (single file)
+        # Fallback: cluster-resources/<type>.json (single file)
         if not all_items:
             for ext in (".json", ".yaml", ".yml"):
                 single_file = cr_dir / f"{resource_type}{ext}"
@@ -419,7 +428,27 @@ class BundleParser:
                         except Exception as e:
                             logger.warning("Error parsing log %s: %s", log_file, e)
 
-        # Strategy 2: <pod-name>/<container>.log at bundle root (real Troubleshoot bundles)
+        # Strategy 2: cluster-resources/pods/logs/<namespace>/<pod>/<container>.log
+        cr_logs_dir = self._root / "cluster-resources" / "pods" / "logs"
+        if cr_logs_dir.exists() and cr_logs_dir.is_dir():
+            for ns_dir in cr_logs_dir.iterdir():
+                if not ns_dir.is_dir():
+                    continue
+                namespace = ns_dir.name
+                for pod_dir in ns_dir.iterdir():
+                    if not pod_dir.is_dir():
+                        continue
+                    pod_name = pod_dir.name
+                    for log_file in pod_dir.iterdir():
+                        if not log_file.is_file() or log_file.suffix != ".log":
+                            continue
+                        container = log_file.stem.replace("-previous", "")
+                        try:
+                            log_entries.extend(self._parse_log_file(log_file, namespace, pod_name, container))
+                        except Exception as e:
+                            logger.warning("Error parsing log %s: %s", log_file, e)
+
+        # Strategy 3: <pod-name>/<container>.log at bundle root (real Troubleshoot bundles)
         skip_dirs = {
             "cluster-info",
             "cluster-resources",

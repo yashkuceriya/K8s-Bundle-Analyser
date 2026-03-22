@@ -609,10 +609,74 @@ async def create_demo_bundle():
         ],
     )
 
-    # Store in memory so the analysis page works
+    # Store in memory so the analysis page + chat work
     demo_bundle = BundleInfo(id=demo_id, filename="demo-support-bundle.tar.gz", status=BundleStatus.completed)
     _bundles[demo_id] = demo_bundle
     _analyses[demo_id] = result
+
+    # Store minimal parsed data so chat can answer questions
+    _parsed_data[demo_id] = {
+        "pods": [
+            {
+                "metadata": {"name": "payment-gateway-7f8d9c4b5-x2k9l", "namespace": "payments"},
+                "status": {
+                    "phase": "Running",
+                    "containerStatuses": [
+                        {
+                            "name": "payment-api",
+                            "restartCount": 42,
+                            "state": {"waiting": {"reason": "CrashLoopBackOff"}},
+                        }
+                    ],
+                },
+            },
+            {
+                "metadata": {"name": "api-server-abc123", "namespace": "production"},
+                "status": {
+                    "phase": "Running",
+                    "containerStatuses": [{"name": "api", "restartCount": 8, "ready": False}],
+                },
+            },
+        ],
+        "nodes": [
+            {"metadata": {"name": "worker-1"}, "status": {"conditions": [{"type": "Ready", "status": "True"}]}},
+            {
+                "metadata": {"name": "worker-3"},
+                "status": {"conditions": [{"type": "Ready", "status": "False", "reason": "KubeletNotReady"}]},
+            },
+        ],
+        "events": [],
+        "logs": [
+            {
+                "source": "payments/payment-gateway/payment-api",
+                "message": "Failed to connect to redis-master:6379 - Connection refused",
+                "level": "error",
+                "namespace": "payments",
+                "pod": "payment-gateway-7f8d9c4b5-x2k9l",
+            },
+            {
+                "source": "production/api-server/api",
+                "message": "High latency on /api/checkout: p99=4200ms",
+                "level": "warn",
+                "namespace": "production",
+                "pod": "api-server-abc123",
+            },
+        ],
+        "deployments": [],
+        "services": [],
+        "namespaces": [{"metadata": {"name": "payments"}}, {"metadata": {"name": "production"}}],
+        "statefulsets": [],
+        "daemonsets": [],
+        "jobs": [],
+        "cronjobs": [],
+        "ingresses": [],
+        "hpas": [],
+        "cluster_version": {"gitVersion": "v1.28.4"},
+        "host_info": {},
+        "analysis_json": None,
+        "pvs": [],
+        "storage_classes": [],
+    }
 
     return result
 

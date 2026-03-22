@@ -220,15 +220,17 @@ export default function Dashboard() {
 
           {/* Upload Zone */}
           <div
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragOver={(e) => { if (!uploading && !analyzing) { e.preventDefault(); setDragOver(true); } }}
             onDragLeave={() => setDragOver(false)}
-            onDrop={onDrop}
-            onClick={() => fileInputRef.current?.click()}
+            onDrop={(e) => { if (!uploading && !analyzing) onDrop(e); }}
+            onClick={() => { if (!uploading && !analyzing) fileInputRef.current?.click(); }}
             className={clsx(
-              'border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center gap-4 cursor-pointer transition-all',
-              dragOver
-                ? 'border-accent-blue bg-accent-blue/5'
-                : 'border-navy-600 hover:border-navy-500 bg-navy-800/30'
+              'border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center gap-4 transition-all',
+              uploading || analyzing
+                ? 'border-outline-variant/20 bg-surface-container cursor-wait'
+                : dragOver
+                  ? 'border-primary bg-primary/5 cursor-pointer'
+                  : 'border-outline-variant/30 hover:border-primary/50 bg-surface-container-low cursor-pointer'
             )}
           >
             <input

@@ -135,11 +135,11 @@ export default function AnalysisView() {
       <div className="min-h-screen bg-surface pt-16">
         <Navbar />
         <div className="flex flex-col items-center justify-center h-[80vh] gap-4">
-          <AlertTriangle size={48} className="text-red-400" />
-          <p className="text-gray-400">{error || 'Analysis not found'}</p>
+          <AlertTriangle size={48} className="text-error" />
+          <p className="text-on-surface-variant">{error || 'Analysis not found'}</p>
           <Link
             to="/"
-            className="mt-2 text-sm text-[#06b6d4] hover:text-cyan-300 transition-colors hover:underline"
+            className="mt-2 text-sm text-primary hover:text-primary-container transition-colors hover:underline"
           >
             Go back to Dashboard
           </Link>

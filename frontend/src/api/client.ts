@@ -3,7 +3,7 @@ import type { BundleInfo, AnalysisResult, ChatRequest, ChatResponse, AnalysisHis
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || (typeof window !== 'undefined' && window.location.hostname !== 'localhost' ? 'https://k8s-bundle-analyser-production.up.railway.app/api' : '/api'),
-  timeout: 30000,
+  timeout: 120000,
 });
 
 // Retry on network errors (connection refused, timeout)

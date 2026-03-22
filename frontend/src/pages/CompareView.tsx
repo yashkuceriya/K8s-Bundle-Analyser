@@ -6,7 +6,7 @@ import clsx from 'clsx';
 import Navbar from '../components/Navbar';
 import LoadingSpinner from '../components/LoadingSpinner';
 import SeverityBadge from '../components/SeverityBadge';
-import { compareAnalyses, getBundle } from '../api/client';
+import { compareAnalyses, getBundle, getBundles } from '../api/client';
 import type { AnalysisResult, BundleInfo, Issue } from '../types';
 
 interface IssueDiff {
@@ -17,9 +17,9 @@ interface IssueDiff {
 }
 
 export default function CompareView() {
-  const [params] = useSearchParams();
-  const leftId = params.get('left') || '';
-  const rightId = params.get('right') || '';
+  const [searchParams, setSearchParams] = useSearchParams();
+  const leftParamId = searchParams.get('left') || '';
+  const rightParamId = searchParams.get('right') || '';
 
   const [leftAnalysis, setLeftAnalysis] = useState<AnalysisResult | null>(null);
   const [rightAnalysis, setRightAnalysis] = useState<AnalysisResult | null>(null);
@@ -27,19 +27,26 @@ export default function CompareView() {
   const [rightBundle, setRightBundle] = useState<BundleInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [availableBundles, setAvailableBundles] = useState<BundleInfo[]>([]);
+  const [leftId, setLeftId] = useState<string>(leftParamId);
+  const [rightId, setRightId] = useState<string>(rightParamId);
 
   useEffect(() => {
-    if (!leftId || !rightId) {
-      setError('Missing bundle IDs for comparison');
+    getBundles().then(b => setAvailableBundles(b.filter(x => x.status === 'completed'))).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!leftParamId || !rightParamId) {
       setLoading(false);
       return;
     }
+    setLoading(true);
     (async () => {
       try {
         const [comparison, lb, rb] = await Promise.all([
-          compareAnalyses({ left_bundle_id: leftId, right_bundle_id: rightId }),
-          getBundle(leftId),
-          getBundle(rightId),
+          compareAnalyses({ left_bundle_id: leftParamId, right_bundle_id: rightParamId }),
+          getBundle(leftParamId),
+          getBundle(rightParamId),
         ]);
         setLeftAnalysis(comparison.left);
         setRightAnalysis(comparison.right);
@@ -51,7 +58,7 @@ export default function CompareView() {
         setLoading(false);
       }
     })();
-  }, [leftId, rightId]);
+  }, [leftParamId, rightParamId]);
 
   const severityChartData = useMemo(() => {
     if (!leftAnalysis || !rightAnalysis) return [];
@@ -102,15 +109,15 @@ export default function CompareView() {
     if (!leftAnalysis || !rightAnalysis) return;
     const report = {
       generated_at: new Date().toISOString(),
-      left: { bundle_id: leftId, filename: leftBundle?.filename, analysis: leftAnalysis },
-      right: { bundle_id: rightId, filename: rightBundle?.filename, analysis: rightAnalysis },
+      left: { bundle_id: leftParamId, filename: leftBundle?.filename, analysis: leftAnalysis },
+      right: { bundle_id: rightParamId, filename: rightBundle?.filename, analysis: rightAnalysis },
       issue_diff: issueDiff.map(d => ({ title: d.title, side: d.side })),
     };
     const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `comparison-${leftId.slice(0, 8)}-${rightId.slice(0, 8)}.json`;
+    a.download = `comparison-${leftParamId.slice(0, 8)}-${rightParamId.slice(0, 8)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -124,13 +131,13 @@ export default function CompareView() {
     );
   }
 
-  if (error || !leftAnalysis || !rightAnalysis) {
+  if (error) {
     return (
       <div className="min-h-screen bg-navy-900">
         <Navbar />
         <div className="max-w-screen-lg mx-auto px-6 py-16 text-center">
           <AlertCircle size={40} className="text-red-400 mx-auto mb-4" />
-          <p className="text-red-400">{error || 'Failed to load comparison'}</p>
+          <p className="text-red-400">{error}</p>
           <Link to="/history" className="text-accent-blue text-sm mt-4 inline-block hover:underline">Back to History</Link>
         </div>
       </div>
@@ -141,6 +148,52 @@ export default function CompareView() {
     <div className="min-h-screen bg-navy-900">
       <Navbar />
       <main className="max-w-screen-xl mx-auto px-6 py-10 space-y-8">
+        {/* Bundle Selection */}
+        {!leftAnalysis && !rightAnalysis && !loading && (
+          <div className="bg-navy-800 border border-navy-700 rounded-xl p-8 max-w-2xl mx-auto">
+            <h2 className="text-lg font-semibold text-white mb-6 text-center">Select Bundles to Compare</h2>
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <label className="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-2 block">Baseline</label>
+                <select
+                  value={leftId}
+                  onChange={(e) => setLeftId(e.target.value)}
+                  className="w-full bg-navy-700 border border-navy-600 rounded-lg px-3 py-2.5 text-sm text-gray-300 outline-none focus:border-accent-blue"
+                >
+                  <option value="">Select bundle...</option>
+                  {availableBundles.filter(b => b.id !== rightId).map(b => (
+                    <option key={b.id} value={b.id}>{b.filename}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-2 block">Compare With</label>
+                <select
+                  value={rightId}
+                  onChange={(e) => setRightId(e.target.value)}
+                  className="w-full bg-navy-700 border border-navy-600 rounded-lg px-3 py-2.5 text-sm text-gray-300 outline-none focus:border-accent-blue"
+                >
+                  <option value="">Select bundle...</option>
+                  {availableBundles.filter(b => b.id !== leftId).map(b => (
+                    <option key={b.id} value={b.id}>{b.filename}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-center mt-6">
+              <button
+                disabled={!leftId || !rightId}
+                onClick={() => {
+                  setSearchParams({ left: leftId, right: rightId });
+                }}
+                className="flex items-center gap-2 px-6 py-2.5 bg-accent-blue hover:bg-blue-600 text-white font-semibold rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <GitCompare size={16} />
+                Compare
+              </button>
+            </div>
+          </div>
+        )}
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -155,16 +208,20 @@ export default function CompareView() {
               <p className="text-xs text-gray-500">Side-by-side analysis results</p>
             </div>
           </div>
-          <button
-            onClick={handleExport}
-            className="flex items-center gap-2 px-4 py-2 border border-navy-600 text-gray-300 text-sm font-medium rounded-xl hover:bg-navy-700 transition-colors"
-          >
-            <Download size={14} />
-            Export Report
-          </button>
+          {leftAnalysis && rightAnalysis && (
+            <button
+              onClick={handleExport}
+              className="flex items-center gap-2 px-4 py-2 border border-navy-600 text-gray-300 text-sm font-medium rounded-xl hover:bg-navy-700 transition-colors"
+            >
+              <Download size={14} />
+              Export Report
+            </button>
+          )}
         </div>
 
         {/* Health Score Comparison */}
+        {leftAnalysis && rightAnalysis && (<>
+
         <div className="grid grid-cols-2 gap-6">
           {[
             { label: 'BASELINE', analysis: leftAnalysis, bundle: leftBundle, isActive: false },
@@ -294,6 +351,7 @@ export default function CompareView() {
             })}
           </div>
         </div>
+        </>)}
       </main>
     </div>
   );

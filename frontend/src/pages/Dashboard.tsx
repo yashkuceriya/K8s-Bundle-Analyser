@@ -87,9 +87,21 @@ export default function Dashboard() {
       const bundle = await uploadBundle(file);
       setUploadedBundle(bundle);
       await fetchBundles();
+      // Auto-trigger analysis
+      setUploading(false);
+      setAnalyzing(bundle.id);
+      try {
+        await analyzeBundle(bundle.id);
+        setUploadedBundle(null);
+        navigate(`/analysis/${bundle.id}`);
+      } catch {
+        setError('Analysis failed. Please try again.');
+        await fetchBundles();
+      } finally {
+        setAnalyzing(null);
+      }
     } catch {
       setError('Failed to upload bundle. Please try again.');
-    } finally {
       setUploading(false);
     }
   };
@@ -150,10 +162,22 @@ export default function Dashboard() {
             <p className="text-sm text-gray-400 leading-relaxed max-w-sm">
               Automated Kubernetes diagnostics. Upload a troubleshoot.sh support bundle for instant root cause analysis, health scoring, and remediation playbooks.
             </p>
-            <div className="flex items-center gap-10 pt-4">
+            <div className="flex items-center gap-8 pt-4">
               <div>
-                <p className="text-3xl font-bold text-white">{bundles.length > 0 ? bundles.length : '0'}</p>
-                <p className="text-[10px] text-gray-500 uppercase tracking-widest font-semibold">Bundles Analyzed</p>
+                <p className="text-3xl font-bold text-white">{bundles.length}</p>
+                <p className="text-[10px] text-gray-500 uppercase tracking-widest font-semibold">Bundles</p>
+              </div>
+              <div>
+                <p className="text-3xl font-bold text-red-400">
+                  {bundles.reduce((sum, b) => sum + (b.analysis?.issues?.filter((i: any) => i.severity === 'critical').length ?? 0), 0)}
+                </p>
+                <p className="text-[10px] text-gray-500 uppercase tracking-widest font-semibold">Critical Issues</p>
+              </div>
+              <div>
+                <p className="text-3xl font-bold text-emerald-400">
+                  {bundles.filter(b => b.status === 'completed').length}
+                </p>
+                <p className="text-[10px] text-gray-500 uppercase tracking-widest font-semibold">Analyzed</p>
               </div>
             </div>
           </div>
@@ -179,8 +203,8 @@ export default function Dashboard() {
               aria-label="Upload support bundle file"
               className="hidden"
             />
-            {uploading ? (
-              <LoadingSpinner size={32} label="Uploading..." />
+            {(uploading || analyzing) ? (
+              <LoadingSpinner size={32} label={analyzing ? "Analyzing bundle..." : "Uploading..."} />
             ) : (
               <>
                 <div className="w-14 h-14 bg-navy-700 rounded-2xl flex items-center justify-center border border-navy-600">

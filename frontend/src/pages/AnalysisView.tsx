@@ -76,6 +76,18 @@ export default function AnalysisView() {
     fetchData();
   }, [fetchData]);
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      const tabIndex = parseInt(e.key) - 1;
+      if (tabIndex >= 0 && tabIndex < tabs.length) {
+        setActiveTab(tabs[tabIndex].id);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
   const handleReanalyze = async () => {
     if (!bundleId) return;
     setIsReanalyzing(true);
@@ -207,6 +219,7 @@ export default function AnalysisView() {
               Generate Preflight
             </button>
 
+            <p className="text-[9px] text-gray-600 text-center mt-2">Press 1-6 to switch tabs</p>
           </div>
         </aside>
 
